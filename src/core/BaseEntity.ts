@@ -5,20 +5,24 @@ import { GameEvents } from './EventManager';
  * A common logical base for all visible game entities.
  * Each entity wraps a Phaser.GameObject
  */
-export abstract class BaseEntity {
+export abstract class BaseEntity<
+    T extends Phaser.GameObjects.GameObject & Phaser.GameObjects.Components.Transform
+> {
     protected scene: Phaser.Scene;
-    protected gameObject: Phaser.GameObjects.GameObject;
+    protected gameObject: T;
     protected events = GameEvents
     
     protected alive = true;
 
-    constructor(scene: Phaser.Scene, gameObject: Phaser.GameObjects.GameObject) {
+    constructor(scene: Phaser.Scene, gameObject: T) {
         this.scene = scene;
         this.gameObject = gameObject;
     }
 
     /** Called each frame by managers or the scene */
-    abstract updateEntity(time: number, delta: number): void;
+    update(time: number, delta: number): void {
+        // by default, nothing to update
+    }
 
     /** Emit an event globally */
     emit(event: string, ...args: any[]): void {
@@ -55,5 +59,13 @@ export abstract class BaseEntity {
     getPosition(): Phaser.Math.Vector2 {
         const go = this.gameObject as any;
         return new Phaser.Math.Vector2(go.x ?? 0, go.y ?? 0);
+    }
+
+    getX() {
+        return this.gameObject.x
+    }
+
+    getY() {
+        return this.gameObject.y
     }
 }
