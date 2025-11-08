@@ -1,11 +1,11 @@
 import { Bomb } from "../bombs/Bomb";
 import type { Character } from "../characters/Characters";
-import { BaseEntity, EntityProperties } from "../core/BaseEntity";
+import { EntityProperties } from "../core/BaseEntity";
 import { GameMode } from "../core/GameConfig";
 import { GridCoordinate } from "../core/GridSystem";
 import { MovingEntity } from "../core/MovingEntity";
 import type { Controller } from "../input/Controller";
-import { Direction, getMoveIndicators, rectsIntersect } from "../util/util";
+import { getMoveIndicators, rectsIntersect } from "../util/util";
 
 
 export interface PlayerProperties extends EntityProperties {
@@ -138,15 +138,15 @@ export class Player extends MovingEntity<Phaser.GameObjects.Image> {
     }
 
 
-    die() {
+    die(): boolean {
         // in practise mode, no death. Same if player invincible
         if (this.context.config.mode === GameMode.practise  || this.invincible) 
-            return
+            return false
 
         // if shielded, use shield instead
         if (this.shield) {
             this.consumeShield()
-            return
+            return false
         }
 
         // Kill player
@@ -166,6 +166,8 @@ export class Player extends MovingEntity<Phaser.GameObjects.Image> {
         this.context.scene.time.delayedCall(2000, () => {
             this.context.scene.scene.start('MenuScene')
         })
+
+        return true
     }
 
 }

@@ -8,7 +8,7 @@ import { Enemy, EnemyProperties } from "./Enemy"
 export class EnemyManager extends EntityManager<Enemy> {
 
     subscribeToEvents(): void {
-        this.context.events.on('enemy:death', this.handleEnemyDeath, this)
+        this.context.events.on('enemy:death', this.kill, this)
     }
     
 
@@ -23,14 +23,16 @@ export class EnemyManager extends EntityManager<Enemy> {
         return enemy
     }
 
-
-    handleEnemyDeath(enemy: Enemy) {
-        this.remove(enemy)
+    kill(enemy: Enemy) {
+        const killed = enemy.die()
+        if (killed) {
+            this.remove(enemy)
+        }
     }
     
 
     destroy() {
-        this.context.events.off('enemy:death', this.handleEnemyDeath, this)
+        this.context.events.off('enemy:death', this.kill, this)
         this.destroyAll()
     }
 }

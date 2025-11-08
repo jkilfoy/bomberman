@@ -21,10 +21,10 @@ export class CollisionManager {
         obstacles: readonly Obstacle[];
         powerups: readonly PowerUp[];
         bombs: readonly Bomb[];
-        explosions: readonly Explosion[];
+        activeExplosions: readonly Explosion[];
     }) {
         
-        const { players, enemies, obstacles, powerups, bombs, explosions } = entities;
+        const { players, enemies, obstacles, powerups, bombs, activeExplosions: explosions } = entities;
 
         // --- Player Collisions ---
         for (const player of players) {
@@ -69,28 +69,36 @@ export class CollisionManager {
                     enemy.changeDirection();
                 }
             }
+
+            // enemy vs bombs
+            for (const bomb of bombs) {
+                if (this.overlaps(enemy, bomb)) {
+                    this.pushMoverBack(enemy, bomb)
+                }
+            }
         }
 
         // --- Explosion Collisions ---
         for (const explosion of explosions) {
 
+            // 💀 Kill player caught in explosion 
             for (const player of players) {
                 if (this.overlaps(player, explosion)) {
-                    player.die()
-                    // GameEvents.emit("player:die", player);
+                    this.context.playerManager?.kill(player)
                 }
             }
 
+            // ⚔️ Slay enemy if they're caught in the splosion
             for (const enemy of enemies) {
                 if (this.overlaps(enemy, explosion)) {
-                    enemy.die()
-                    // GameEvents.emit("enemy:die", enemy);
+                    this.context.enemyManager?.kill(enemy)
                 }
             }
 
+            // Break breakable obstacles caught in explosion
             for (const obstacle of obstacles) {
-                if (obstacle.isDestructible() && this.overlaps(obstacle, explosion)) {
-                    // GameEvents.emit("obstacle:destroy", obstacle);
+                if (obstacle.isBreakable() && this.overlaps(obstacle, explosion)) {
+                    this.context.obstacleManager?.break(obstacle)
                 }
             }
         }

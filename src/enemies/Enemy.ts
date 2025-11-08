@@ -56,7 +56,7 @@ export class Enemy extends MovingEntity<Phaser.GameObjects.Image> {
         return this.gameObject.displayHeight
     }
 
-    die() {
+    die(): boolean {
         this.alive = false
         this.gameObject.setTint(0xff0000)  // tint it red
 
@@ -78,8 +78,10 @@ export class Enemy extends MovingEntity<Phaser.GameObjects.Image> {
             ease: 'Quartic.easeOut',
             onComplete: () => {
                 deathtext.destroy()
-                this.context.events.emit('enemy:death', this)
+                this.context.events.emit('enemy:death', this) // todo: race condition
             }
         })
+
+        return true
     }
 }

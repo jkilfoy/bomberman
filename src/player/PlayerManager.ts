@@ -8,7 +8,7 @@ import { Player, PlayerProperties } from "./Player";
 export class PlayerManager extends EntityManager<Player> {
 
     subscribeToEvents(): void {
-        this.context.events.on('player:death', this.handlePlayerDeath)
+        this.context.events.on('player:death', this.kill)
     }
     
     spawn(coords: GridCoordinate, character: Character, controller: Controller): Player {
@@ -22,7 +22,6 @@ export class PlayerManager extends EntityManager<Player> {
         const player = new Player(props);
         this.entities.push(player);
 
-        console.log(player)
         return player;
     }
 
@@ -30,12 +29,15 @@ export class PlayerManager extends EntityManager<Player> {
         return this.entities.filter(p => p.alive);
     }
 
-    handlePlayerDeath(player: Player) {
-        this.remove(player)
+    kill(player: Player) {
+        const killed = player.die()
+        if (killed) {
+            this.remove(player)
+        }
     }
 
     destroy() {
-        this.context.events.off('enemy:death', this.handlePlayerDeath, this)
+        this.context.events.off('enemy:death', this.kill, this)
         this.destroyAll()
     }
 }
