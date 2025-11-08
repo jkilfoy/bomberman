@@ -10,7 +10,7 @@ export interface ObstacleProperties extends EntityProperties {
 }
 
 export enum ObstacleType {
-    destructible, indestructible
+    breakable, unbreakable
 }
 
 
@@ -25,26 +25,17 @@ export class Obstacle extends BaseEntity<Phaser.GameObjects.Rectangle> {
             y,
             props.width ?? props.context.grid.cellSize * 0.9, //todo magic constant
             props.height ?? props.context.grid.cellSize * 0.9,
-            props.type === ObstacleType.destructible ? 0xcc8844 : 0x999999 // brown/orange color
+            props.type === ObstacleType.breakable ? 0xcc8844 : 0x999999 // brown/orange color
         )
-        sprite.setStrokeStyle(2, props.type === ObstacleType.destructible ? 0x553311 : 0x555555 )
+        sprite.setStrokeStyle(2, props.type === ObstacleType.breakable ? 0x553311 : 0x555555 )
 
         super(props, sprite)
         
         this.type = props.type
     }
 
-    destroy(): void {
-        // Destructible objects might drop loot
-        if (this.type === ObstacleType.destructible) {
-            this.context.events.emit("obstacle:destroyed", this) // todo : does this exist? should because synchronous
-        }
-
-        this.gameObject.destroy();
-    }
-
-    isDestructible(): boolean {
-        return this.type === ObstacleType.destructible
+    isBreakable(): boolean {
+        return this.type === ObstacleType.breakable
     }
 
 

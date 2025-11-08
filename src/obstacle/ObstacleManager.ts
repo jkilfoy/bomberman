@@ -5,6 +5,8 @@ import { CellType, Map } from "../map/Map";
 import { Obstacle, ObstacleProperties, ObstacleType } from "./Obstacle";
 
 export class ObstacleManager extends EntityManager<Obstacle> {
+
+    public powerupSpawnChance = 0.4
   
     spawn(coords: GridCoordinate, type: ObstacleType, width?: number, height?: number): Obstacle {
         const props: ObstacleProperties = {
@@ -20,10 +22,15 @@ export class ObstacleManager extends EntityManager<Obstacle> {
         return obstacle
     }
 
-    // todo : move to parent?
-    destroyObstacle(obstacle: Obstacle) {
-        obstacle.destroy()
-        this.entities = this.entities.filter(o => o !== obstacle)
+    /** Breaks an obstacle, removing it from the game and potentially spawning a powerup */
+    break(obstacle: Obstacle) {
+        if (!obstacle.isBreakable()) return 
+
+        this.remove(obstacle)
+        
+        if (Math.random() < this.powerupSpawnChance) {
+            this.context.powerUpManager?.spawn(obstacle.getGridCoordinates())
+        }
     }
 
     initializeObstacles(map: Map) {
@@ -38,7 +45,7 @@ export class ObstacleManager extends EntityManager<Obstacle> {
                     continue;
 
                 const coords = {row: row, col: col}
-                const obstacleType = cellType === CellType.BOX ? ObstacleType.destructible : ObstacleType.indestructible
+                const obstacleType = cellType === CellType.BOX ? ObstacleType.breakable : ObstacleType.unbreakable
                 this.spawn(coords, obstacleType)
             }
         }          
@@ -51,28 +58,28 @@ export class ObstacleManager extends EntityManager<Obstacle> {
         // Top wall
         this.spawn(
             {col: this.context.grid.width / 2, row: -2},
-            ObstacleType.indestructible,
+            ObstacleType.unbreakable,
             worldWidth, wallThickness
         )
        
         // Bottom wall
         this.spawn(
             {col: this.context.grid.width / 2, row: this.context.grid.height + 1},
-            ObstacleType.indestructible,
+            ObstacleType.unbreakable,
             worldWidth, wallThickness
         )
 
         // Left wall
         this.spawn(
             {col: -2, row: this.context.grid.height / 2},
-            ObstacleType.indestructible,
+            ObstacleType.unbreakable,
             wallThickness, worldHeight
         )
 
         // Right wall
         this.spawn(
             {col: this.context.grid.width + 1, row: this.context.grid.height / 2},
-            ObstacleType.indestructible,
+            ObstacleType.unbreakable,
             wallThickness, worldHeight
         )
     }
