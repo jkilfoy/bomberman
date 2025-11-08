@@ -84,3 +84,7 @@ export function getMoveIndicators(dir: Direction): {moveX: number, moveY: number
 export function getRand(list) {
   return list[Math.floor(Math.random() * list.length)]
 }
+
+export function sameCoordinates(c1: GridCoordinate, c2: GridCoordinate) {
+    return c1.row === c2.row && c1.col === c2.col
+}

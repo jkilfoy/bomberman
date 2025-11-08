@@ -44,4 +44,9 @@ export abstract class EntityManager<T extends BaseEntity<any>> {
     getAll(): readonly T[] {
         return this.entities;
     }
+
+    /** Find any entity matching the criteria */
+    find(pred: (e: T) => boolean): T | undefined {
+        return this.getAll().find(pred)
+    }
 }
