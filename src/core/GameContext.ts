@@ -1,7 +1,12 @@
 import { BombManager } from "../bombs/BombManager";
+import { EnemyManager } from "../enemies/EnemyManager";
+import ExplosionManager from "../explosions/ExplosionManager";
+import { ObstacleManager } from "../obstacle/ObstacleManager";
+import { PlayerManager } from "../player/PlayerManager";
 import { PowerUpManager } from "../powerups/PowerUpManager";
 import { GameConfig } from "./GameConfig";
 import { GridSystem } from "./GridSystem";
+import { TextService } from "./TextService";
 
 
 
@@ -17,7 +22,14 @@ export class GameContext {
     ) { }
 
     // Managers are to be registered after the GameContext is created 
-    bombManager?: BombManager   
+    playerManager?: PlayerManager
+    enemyManager?: EnemyManager
+
+    obstacleManager?: ObstacleManager
+    bombManager?: BombManager
+    explosionManager?: ExplosionManager
     powerUpManager?: PowerUpManager
+
+    textService?: TextService
     // todo : audio manager, floating text registering etc
 }
