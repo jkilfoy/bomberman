@@ -29,13 +29,6 @@ export function rectsIntersect(r1, r2) {
   )
 }
 
-// export function getDirection(moveX, moveY) {
-//     return moveX === -1 ? DIRECTIONS.LEFT
-//                 : moveX === 1 ? DIRECTIONS.RIGHT
-//                 : moveY === -1 ? DIRECTIONS.UP
-//                 : moveY === 1 ? DIRECTIONS.DOWN
-//                 : DIRECTIONS.NONE
-// }
 
 /**
  * Returns the nearest {x, y} position where r1 would not intersect with r2,
@@ -62,7 +55,26 @@ export function getNearestNonintersectingPosition(r1, r2, direction: Direction):
 }
 
 export enum Direction {
-    NONE, LEFT, RIGHT, UP, DOWN
+    NONE = 'NONE', LEFT = 'LEFT', RIGHT = 'RIGHT', UP = 'UP', DOWN = 'DOWN'
+}
+
+export function getMoveIndicators(dir: Direction): {moveX: number, moveY: number} {
+    switch(dir) {
+      case Direction.LEFT:
+          return {moveX: -1, moveY: 0}
+        
+      case Direction.RIGHT:
+          return {moveX: 1, moveY: 0}
+
+      case Direction.UP:
+          return {moveX: 0, moveY: -1}
+
+      case Direction.DOWN:
+          return {moveX: 0, moveY: 1}
+
+      case Direction.NONE:
+          return {moveX: 0, moveY: 0}
+    }
 }
 
 

@@ -10,6 +10,7 @@ import { PowerUp } from "../powerups/PowerUp";
 import { Direction } from "../util/util";
 import { BaseEntity } from "./BaseEntity";
 import { GameContext } from "./GameContext";
+import { MovingEntity } from "./MovingEntity";
 
 export class CollisionManager {
     constructor(private context: GameContext) { }
@@ -33,14 +34,14 @@ export class CollisionManager {
             for (const obstacle of obstacles) {
                 if (this.overlaps(player, obstacle)) {
                     // todo : check
-                    this.resolveOverlap(player, obstacle);
+                    this.pushMoverBack(player, obstacle);
                 }
             }
 
             // player vs bombs
             for (const bomb of bombs) {
                 if (this.overlaps(player, bomb) && player.currentBomb !== bomb) {
-                    this.resolveOverlap(player, bomb)
+                    this.pushMoverBack(player, bomb)
                 }
             }
 
@@ -64,7 +65,7 @@ export class CollisionManager {
         for (const enemy of enemies) {
             for (const obstacle of obstacles) {
                 if (this.overlaps(enemy, obstacle)) {
-                    this.resolveOverlap(enemy, obstacle);
+                    this.pushMoverBack(enemy, obstacle);
                     enemy.changeDirection();
                 }
             }
@@ -103,44 +104,26 @@ export class CollisionManager {
     }
 
     // Pushes entity out of overlap
-    private resolveOverlap(moving: BaseEntity<any>, obstacle: BaseEntity<any>) {
+    private pushMoverBack(moving: MovingEntity<any>, obstacle: BaseEntity<any>) {
         if (!this.overlaps(moving, obstacle)) return
 
         let r1 = moving.getRect()
         let r2 = obstacle.getRect() 
         switch(moving.getDirection()) {
             case Direction.LEFT:
-                r1.coords.x = r2.coords.x + (r2.width + r1.width)/2 + 1
+                r1.coords.x = r2.coords.x + (r1.width + r2.width)/2 + 1
                 break
             case Direction.RIGHT:
-                r1.coords.x = r2.coords.x - (r2.width + r1.width)/2 - 1
+                r1.coords.x = r2.coords.x - (r1.width + r2.width)/2 - 1
                 break 
             case Direction.UP: 
-                r1.coords.y = r2.coords.y + (r2.height + r1.height)/2 + 1
+                r1.coords.y = r2.coords.y + (r1.height + r2.height)/2 + 1
                 break
             case Direction.DOWN: 
-                r1.coords.y = r2.coords.y - (r2.height + r1.height)/2 - 1
+                r1.coords.y = r2.coords.y - (r1.height + r2.height)/2 - 1
                 break
         }
 
         moving.setWorldCoordinate(r1.coords)
-        
-        //         this.sprite.x = newPosition.x
-        //         this.sprite.y = newPosition.y
-
-
-        // const mb = moving.gameObject.getBounds();
-        // const ob = obstacle.gameObject.getBounds();
-
-        // const dx = (mb.centerX - ob.centerX);
-        // const dy = (mb.centerY - ob.centerY);
-        // const absX = Math.abs(dx);
-        // const absY = Math.abs(dy);
-
-        // if (absX > absY) {
-        //     moving.gameObject.x += dx > 0 ? ob.width / 2 : -ob.width / 2;
-        // } else {
-        //     moving.gameObject.y += dy > 0 ? ob.height / 2 : -ob.height / 2;
-        // }
     }
 }
