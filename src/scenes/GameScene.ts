@@ -5,14 +5,13 @@ import { GameEvents } from "../core/EventManager"
 import { GameConfig } from "../core/GameConfig"
 import { GameContext } from "../core/GameContext"
 import { GridSystem } from "../core/GridSystem"
+import { TextService } from "../core/TextService"
 import { EnemyManager } from "../enemies/EnemyManager"
 import ExplosionManager from "../explosions/ExplosionManager"
 import KeyboardController from "../input/KeyboardController"
 import { BasicMap } from "../map/BasicMap"
 import { Map } from "../map/Map"
-import { Obstacle } from "../obstacle/Obstacle"
 import { ObstacleManager } from "../obstacle/ObstacleManager"
-import { Player } from "../player/Player"
 import { PlayerManager } from "../player/PlayerManager"
 import { PowerUpManager } from "../powerups/PowerUpManager"
 
@@ -55,6 +54,9 @@ export default class GameScene extends Phaser.Scene {
 
   // Collisions
   public collisionManager!: CollisionManager
+
+  // Text Service
+  public textService!: TextService
 
 
 
@@ -102,16 +104,20 @@ export default class GameScene extends Phaser.Scene {
       // Obstacles
       this.obstacleManager = new ObstacleManager(this.context)
       this.obstacleManager.initializeObstacles(this.map)
+      this.context.obstacleManager = this.obstacleManager
       
 
       // Players
       const controller = new KeyboardController(this)
 
       this.playerManager = new PlayerManager(this.context)
+      this.context.playerManager = this.playerManager
+
       this.playerManager.spawn({col: 0, row: 0}, this.selectedCharacter, controller)
       
       // Enemies
       this.enemyManager = new EnemyManager(this.context)
+      this.context.enemyManager = this.enemyManager
       this.enemyManager.spawn({col: this.context.grid.width - 1, row: 0})
 
 
@@ -120,6 +126,7 @@ export default class GameScene extends Phaser.Scene {
       this.context.bombManager = this.bombManager
 
       this.explosionManager = new ExplosionManager(this.context)
+      this.context.explosionManager = this.explosionManager
 
       // PowerUps
       this.powerupManager = new PowerUpManager(this.context)
@@ -128,6 +135,11 @@ export default class GameScene extends Phaser.Scene {
 
       /// Manager Collisions
       this.collisionManager = new CollisionManager(this.context)
+
+
+      // Text Service
+      this.textService = new TextService(this.context)
+      this.context.textService = this.textService
     }
 
     // --------------------
@@ -173,49 +185,11 @@ export default class GameScene extends Phaser.Scene {
         obstacles: this.obstacleManager.getAll(),
         powerups: this.powerupManager.getAll(),
         bombs: this.bombManager.getAll(),
-        explosions: this.explosionManager.getActiveExplosions()
-      }) // todo
+        activeExplosions: this.explosionManager.getActiveExplosions()
+      })
 
       // update collisions (they are only active for the frame of their explosion)
       this.explosionManager.update(time, delta)
-    }
-
-
-
-
-
-
-    handlePlayerDeath(player: Player) {
-      player.die()
-    }
-
-    // killEnemy(enemy) {
-    //   this.enemyManager.killEnemy(enemy)
-    // }
-
-
-    // todo : make service?
-    /// Utility for showing floating text
-    showFloatingText(x, y, text, color = '#ffffff') {
-      const label = this.add.text(x, y, text, {
-        fontFamily: 'Arial',
-        fontSize: 24,
-        color: color,
-        fontStyle: 'bold',
-        stroke: '#000000',
-        strokeThickness: 4
-      }).setOrigin(0.5)
-
-      // Tween the text upward + fade out
-      this.tweens.add({
-        targets: label,
-        y: y - 30,
-        alpha: 0,
-        duration: 1200,
-        delay: 100,
-        ease: 'Cubic.easeIn',
-        onComplete: () => label.destroy()
-      })
     }
 
   }

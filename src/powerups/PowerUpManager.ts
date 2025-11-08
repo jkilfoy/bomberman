@@ -1,7 +1,6 @@
 import { EntityManager } from "../core/EntityManager"
 import { GridCoordinate } from "../core/GridSystem"
 import { Player } from "../player/Player"
-import GameScene from "../scenes/GameScene"
 import { getRand } from "../util/util"
 import { PowerUp, PowerUpProperties } from "./PowerUp"
 
@@ -92,11 +91,9 @@ export class PowerUpManager extends EntityManager<PowerUp> {
                 player.acquireShield()
                 break
         }
-        
-        // todo : show floating text of powerup: consider emitting event to 
-        // text/popup service, vs. some method in config to call 
 
-        // this.context.scene.showFloatingText(this.game.getX(player.getColumn()), this.game.getY(player.getRow()), pu.text, pu.color)
+        this.context.textService?.showFloatingText(pu.getWorldCoordinates(), pu.text, pu.color)
+
         // todo : fix "texture key already in use" bug
         //this.textures.generate('spark', { data: ['1'], pixelWidth: 2, pixelHeight: 2 });
         // const sparkle = this.game.add.particles(0, 0, 'spark', {
@@ -112,10 +109,6 @@ export class PowerUpManager extends EntityManager<PowerUp> {
 
         // Remove power-up
         this.remove(pu)
-    }
- 
-    update() {
-        // manage powerups
     }
 
 
