@@ -21,6 +21,9 @@ export class Bomb extends BaseEntity<Phaser.GameObjects.Arc> {
     public detonated = false;
     public player: Player // come back to this
 
+    // timer 
+    public timer: number = 0
+
     constructor(props: BombProperties) {
         const {x, y} = props.context.grid.gridToWorld(props.gridCoordinate)
         let sprite = props.context.scene.add.circle(
@@ -36,9 +39,15 @@ export class Bomb extends BaseEntity<Phaser.GameObjects.Arc> {
         this.timerDuration = props.timerDuration ?? 3000
     }
 
-    detonate() {
-        if (!this.detonated) {
-            this.gameObject.destroy() // todo : emit event?
+    update(time: number, delta: number) {
+        this.timer += delta
+
+        if (this.timer >= this.timerDuration) {
+            this.context.bombManager?.detonate(this)
         }
+    }
+
+    detonate() {
+        this.detonated = true
     }
 }

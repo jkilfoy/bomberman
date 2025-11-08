@@ -4,7 +4,9 @@ import { EntityManager } from "../core/EntityManager";
 import { GameEvents } from "../core/EventManager";
 import { GameContext } from "../core/GameContext";
 import { GridCoordinate } from "../core/GridSystem";
+import { ObstacleType } from "../obstacle/Obstacle";
 import { Player } from "../player/Player";
+import { sameCoordinates } from "../util/util";
 import { Bomb, BombProperties } from "./Bomb";
 
 const directions = [
@@ -17,13 +19,11 @@ const directions = [
 
 
 export class BombManager extends EntityManager<Bomb> {
-  
-    private bombs: Bomb[] = [];
 
     constructor(context: GameContext) {
         super(context)
         GameEvents.on("bomb:spawn", this.spawn, this);
-        GameEvents.on("bomb:detonate", this.handleBombDetonate, this);
+        GameEvents.on("bomb:detonate", this.detonate, this);
     }
 
     spawn(coords: GridCoordinate, range: number, timerDuration: number, player: Player): Bomb {
@@ -38,12 +38,12 @@ export class BombManager extends EntityManager<Bomb> {
         } 
 
         const bomb = new Bomb(bombProperties);
-        this.bombs.push(bomb);
+        this.entities.push(bomb);
         return bomb
     }
 
     canDropBomb(player: Player) {
-        const existing = this.bombs.some(bomb => { 
+        const existing = this.entities.some(bomb => { 
             return player.getGridCoordinates() == bomb.getGridCoordinates() // todo : TEST
         })
         return !existing
@@ -58,143 +58,67 @@ export class BombManager extends EntityManager<Bomb> {
         )
     }
 
-
-    handleBombDetonate(bomb: Bomb) {
-        this.remove(bomb)
-    }
-
-    getAll(): Bomb[] {
-        return this.bombs;
-    }
-
     destroy() {
         GameEvents.off("bomb:spawn", this.spawn, this);
-        GameEvents.off("bomb:detonate", this.handleBombDetonate, this);
-        this.bombs.forEach(b => b.destroy());
+        GameEvents.off("bomb:detonate", this.detonate, this);
+        this.entities.forEach(b => b.destroy());
     }
-}
 
-// export class BombManager {
+    detonate(bomb: Bomb) {
+        if (bomb.detonated) return // bomb has already detonated
 
-//     public bombs: Array<Bomb> = []
-
-//     private game: Game
-
-//     constructor(game: Game) {
-//         this.game = game
-//     }
-
-//     canDropBomb(player: Player) {
-//         const existing = this.bombs.some(bomb => { 
-//             return bomb.getColumn() === player.getColumn() 
-//                 && bomb.getRow() === player.getRow()
-//         })
-//         return !existing
-//     }
-
-//     dropBomb(player: Player) {
-//         const bombProperties: BombProperties = {
-//             col: player.getColumn(),
-//             row: player.getRow(),
-//             radius: this.game.cellSize * 0.3,
-//             player: player,
-//             range: player.explosionRange,
-//             timerDuration: player.bombTimerDuration,
-//             color: 0x4444ff
-//         } 
-
-//         // Create Bomb
-//         const bomb: Bomb = new Bomb(this.game, bombProperties)
-
-//         // Start countdown timer
-//         this.game.time.delayedCall(bomb.timerDuration, () => {
-//             this.detonate(bomb)
-//         })
-
-//         this.bombs.push(bomb)
-//         return bomb
-//     }
-
-//     detonate(bomb: Bomb) {
-//         if (!this.bombs.includes(bomb)) return // bomb doesn't exist // todo :how can this happen?
+        // Keep track of any bombs caught in this explosion
+        let chainedReactions: Bomb[] = []
         
-//         this.bombs = this.bombs.filter(b => b !== bomb)
-//         this.game.obstacles = this.game.obstacles.filter(o => o !== bomb.sprite)
-//         bomb.player.bombDetonated(bomb)
-//         bomb.detonate()
+        // Explosion cells (center + 4 directions)
+        let {col, row} = bomb.getGridCoordinates()
+        const explosionCells: GridCoordinate[] = [{col, row}]
 
-//         // Explosion cells (center + 4 directions)
-//         const explosionCells = [{ row: bomb.getRow(), col: bomb.getColumn() }]
+        // Determine explosion cells based on bomb's range and any blocking obstacles
+        for (const { dr, dc } of directions) {
+            for (let step = 1; step <= bomb.range; step++) {
+                const cell = {
+                    col: col + dc * step, 
+                    row: row + dr * step
+                    }
 
-//         for (const { dr, dc } of directions) {
-//             for (let step = 1; step <= bomb.range; step++) {
-//                 const r = bomb.getRow() + dr * step
-//                 const c = bomb.getColumn() + dc * step
-//                 if (r < 0 || r >= this.game.gridHeight || c < 0 || c >= this.game.gridWidth) break
+                if (!this.context.grid.isValidCell(cell)) 
+                    break
 
-//                 // Stop propagation if blocked by an indestructible object
-//                 const blockingObstacle = this.game.obstacles.find(obj => {
-//                     const objCol = this.game.getColumn(obj.x)
-//                     const objRow = this.game.getColumn(obj.y)
-//                     return objCol === c && objRow === r && obj.type === 'indestructible'
-//                 })
-//                 if (blockingObstacle) break
+                // Stop propagation if blocked by an indestructible object
+                const blockingObstacle = this.context.obstacleManager?.find(obst => {
+                    return  obst.type == ObstacleType.unbreakable 
+                    &&  sameCoordinates(obst.getGridCoordinates(), cell) 
+                    })
+                if (blockingObstacle) break
 
-//                 explosionCells.push({ row: r, col: c })
+                explosionCells.push(cell)
 
-//                 // Stop if hits a destructible box (it’ll be destroyed but doesn’t spread further)
-//                 const destructible = this.game.obstacles.find(obj => {
-//                     const objCol = this.game.getColumn(obj.x)
-//                     const objRow = this.game.getColumn(obj.y)
-//                     return objCol === c && objRow === r && obj.type === 'box'
-//                     })
-//                 if (destructible) break
-//             }
-//         }
+                // Stop if hits a destructible box (it’ll be destroyed but doesn’t spread further)
+                const destructible = this.context.obstacleManager?.find(obst => {
+                    return  obst.type == ObstacleType.breakable 
+                    &&  sameCoordinates(obst.getGridCoordinates(), cell)
+                    })
+                if (destructible) break
+            }
+        }
 
-//         // Spawn fire graphics in explosionCells
-//         for (const { row, col } of explosionCells) {
-//             const x = this.game.getX(col)
-//             const y = this.game.getY(row)
-//             const fire = this.game.add.rectangle(x, y, this.game.cellSize * 0.9, this.game.cellSize * 0.9, 0xff4400) // todo : magic cosntants
-//             fire.alpha = 0.8
-//             fire.type = 'fire'
+        // cause explosion in each explosion cell
+        for (const cell of explosionCells) {
 
-//             // 🔥 Chain Reaction: Detonate any bombs caught in the blast
-//             this.bombs.forEach(otherBomb => {
-//                 if (otherBomb.getRow() === row && otherBomb.getColumn() === col) {
-//                     this.detonate(otherBomb)
-//                 }
-//             })
+            const existingBomb = this.find(bomb => sameCoordinates(bomb.getGridCoordinates(), cell))
+            if (existingBomb) {
+                chainedReactions.push(existingBomb)
+            }
 
-//             // 🧱 Destroy destructible boxes in the blast
-//             const destroyedBoxes = this.game.obstacles.filter(obj => {
-//                 const objCol = this.game.getColumn(obj.x)
-//                 const objRow = this.game.getRow(obj.y)
-                
-//                 return objCol === col && objRow === row && obj.type === 'box'
-//             })
+            this.context.explosionManager?.spawn(cell)
+        }
 
-//             // 💀 Kill player if they're caught in the splosion
-//             if (rectsIntersect(getRect(bomb.player.sprite), getRect(fire))) {
-//                 this.game.handlePlayerDeath(bomb.player)
-//             }
+        bomb.player.bombDetonated(bomb)
+        this.remove(bomb)
+        for (const chainedBomb of chainedReactions) {
+            this.detonate(chainedBomb)
+        }
+    }
 
-//             // todo : enemy manager
-//             // ⚔️ Kill enemies if they're caught in the splosion
-//             // if (rectsIntersect(getRect(this.game.enemy), getRect(fire))) {
-//             //     this.game.killEnemy(this.game.enemy) // 
-//             // }
-
-//             for (const box of destroyedBoxes) {
-//                 box.destroy()
-//                 this.game.removeObstacle(box)
-//                 this.game.spawnPowerUp(col, row)
-//             }
-
-//             // Remove fire after duration
-//             this.game.time.delayedCall(this.game.fireDuration, () => fire.destroy())
-//         }
-//     }
-
-// }
+}
