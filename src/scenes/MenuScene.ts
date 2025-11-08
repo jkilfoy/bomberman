@@ -10,7 +10,7 @@ export default class MenuScene extends Phaser.Scene {
 
 
     constructor() {
-      super('Menu')
+      super('MenuScene')
     }
 
     preload() {
@@ -48,7 +48,7 @@ export default class MenuScene extends Phaser.Scene {
         startGameButton.setInteractive({ useHandCursor: true });
 
         startGameButton.on('pointerup', () => {
-            this.scene.start('Game', { 
+            this.scene.start('GameScene', { 
                 selectedCharacter: this.selectedCharacter,
                 mode: GameMode.arena
             })
@@ -73,7 +73,7 @@ export default class MenuScene extends Phaser.Scene {
         practiseButton.setInteractive({ useHandCursor: true });
 
         practiseButton.on('pointerup', () => {
-            this.scene.start('Game', { 
+            this.scene.start('GameScene', { 
                 selectedCharacter: this.selectedCharacter,
                 mode: GameMode.practise
             })

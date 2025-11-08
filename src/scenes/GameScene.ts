@@ -4,12 +4,13 @@ import { CollisionManager } from "../core/CollisionManager"
 import { GameEvents } from "../core/EventManager"
 import { GameConfig } from "../core/GameConfig"
 import { GameContext } from "../core/GameContext"
-import { GridCoordinate, GridSystem } from "../core/GridSystem"
+import { GridSystem } from "../core/GridSystem"
 import { EnemyManager } from "../enemies/EnemyManager"
 import ExplosionManager from "../explosions/ExplosionManager"
 import KeyboardController from "../input/KeyboardController"
 import { BasicMap } from "../map/BasicMap"
-import { CellType, Map } from "../map/Map"
+import { Map } from "../map/Map"
+import { Obstacle } from "../obstacle/Obstacle"
 import { ObstacleManager } from "../obstacle/ObstacleManager"
 import { Player } from "../player/Player"
 import { PlayerManager } from "../player/PlayerManager"
@@ -58,7 +59,7 @@ export default class GameScene extends Phaser.Scene {
 
 
     constructor() {
-      super('Game')
+      super('GameScene')
     }
 
 
@@ -76,57 +77,57 @@ export default class GameScene extends Phaser.Scene {
 
   
     preload() {
-      this.load.image('luffy', 'src/assets/luffy.png')
-      this.load.image('sanji', 'src/assets/sanji.png')
-      this.load.image('zoro', 'src/assets/zoro.png')
-      this.load.image('eric', 'src/assets/eric.png')
+      Object.values(characters).forEach(char => {
+            this.load.image(char.key, char.path)
+        })
       this.load.image('cone',  'src/assets/traffic_cone.png')
     }
   
     create() {
 
-
       // Create game context to pass to managers/entities
-      this.context = {
-        config: this.config,
-        scene: this,
-        grid: new GridSystem(15, 13, 64),
-        events: GameEvents,
-      };
+      this.context = new GameContext(this.config, this, GameEvents, new GridSystem(13, 11, 64));
 
-      // Create controllers
+      // Make map
+      this.map = new BasicMap(this.context.grid.height, this.context.grid.width) 
+
+      // Draw grid
+      this.drawGrid()
+
+
+      //-------------------------------
+      // Create and register managers
+      //-------------------------------
+
+      // Obstacles
+      this.obstacleManager = new ObstacleManager(this.context)
+      this.obstacleManager.initializeObstacles(this.map)
+      
+
+      // Players
       const controller = new KeyboardController(this)
-      // todo spawn player in player manager
-      // this.player = new Player(this, this.selectedCharacter, controller, this.cellSize / 2, this.cellSize * 10.5) //todo : fix x, y params
+
       this.playerManager = new PlayerManager(this.context)
       this.playerManager.spawn({col: 0, row: 0}, this.selectedCharacter, controller)
-
-
-
-      // Create and register managers
+      
+      // Enemies
       this.enemyManager = new EnemyManager(this.context)
+      this.enemyManager.spawn({col: this.context.grid.width - 1, row: 0})
 
-      // Bomb Manager
+
+      // Bombs && Explosions
       this.bombManager = new BombManager(this.context)
       this.context.bombManager = this.bombManager
 
       this.explosionManager = new ExplosionManager(this.context)
 
-      // PowerUp Manager
+      // PowerUps
       this.powerupManager = new PowerUpManager(this.context)
       this.context.powerUpManager = this.powerupManager
 
-      // Obstacle Manager
-      this.obstacleManager = new ObstacleManager(this.context)
 
-      // Draw map
-      this.map = new BasicMap(this.context.grid.height, this.context.grid.width) 
-      this.obstacleManager.initializeObstacles(this.map)
-
-      // Collision Manager
+      /// Manager Collisions
       this.collisionManager = new CollisionManager(this.context)
-
-      this.drawGrid() // todo : should be before obstacles?
     }
 
     // --------------------
@@ -135,7 +136,7 @@ export default class GameScene extends Phaser.Scene {
   
     drawGrid() {
       const g = this.add.graphics()
-      g.lineStyle(1, 0x999999, 1)
+      g.lineStyle(1, 0x555555, 1)
   
       // Draw vertical lines
       for (let x = 0; x <= this.context.grid.width; x++) {
@@ -153,20 +154,12 @@ export default class GameScene extends Phaser.Scene {
     }
 
 
-    spawnPowerUp(coords: GridCoordinate) {
-      this.powerupManager.spawn(coords)
-    }
 
     // --------------
     // UPDATE LOOP
     // ---------------
-    isKeyPressed(...keys) {
-      return keys.some(key => key.isDown)
-    }
   
     update(time, delta) {
-
-      console.log(this.children.list.length);
 
       // update each manager
       this.bombManager.update(time, delta)
@@ -186,6 +179,11 @@ export default class GameScene extends Phaser.Scene {
       // update collisions (they are only active for the frame of their explosion)
       this.explosionManager.update(time, delta)
     }
+
+
+
+
+
 
     handlePlayerDeath(player: Player) {
       player.die()

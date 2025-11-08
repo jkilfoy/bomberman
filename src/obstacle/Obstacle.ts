@@ -17,7 +17,6 @@ export enum ObstacleType {
 export class Obstacle extends BaseEntity<Phaser.GameObjects.Rectangle> {
 
     public type: ObstacleType
-    public 
 
     constructor(props: ObstacleProperties) {
         const {x, y} = props.context.grid.gridToWorld(props.gridCoordinates)
@@ -28,7 +27,7 @@ export class Obstacle extends BaseEntity<Phaser.GameObjects.Rectangle> {
             props.height ?? props.context.grid.cellSize * 0.9,
             props.type === ObstacleType.destructible ? 0xcc8844 : 0x999999 // brown/orange color
         )
-        sprite.setStrokeStyle(props.type === ObstacleType.destructible ? 0x553311 : 0x555555 )
+        sprite.setStrokeStyle(2, props.type === ObstacleType.destructible ? 0x553311 : 0x555555 )
 
         super(props, sprite)
         
@@ -37,7 +36,7 @@ export class Obstacle extends BaseEntity<Phaser.GameObjects.Rectangle> {
 
     destroy(): void {
         // Destructible objects might drop loot
-        if (this.type = ObstacleType.destructible) {
+        if (this.type === ObstacleType.destructible) {
             this.context.events.emit("obstacle:destroyed", this) // todo : does this exist? should because synchronous
         }
 

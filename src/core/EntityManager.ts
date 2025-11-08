@@ -5,6 +5,7 @@ export abstract class EntityManager<T extends BaseEntity<any>> {
     protected entities: T[] = [];
 
     constructor(protected context: GameContext) {
+        // console.log(context)
         this.subscribeToEvents()
     }
 
@@ -22,7 +23,6 @@ export abstract class EntityManager<T extends BaseEntity<any>> {
 
     /** Basic update logic: update each entity sequentially */
     update(time: number, delta: number) {
-        console.log("something")
         for (const e of this.entities) {
             e.update(time, delta);
         }

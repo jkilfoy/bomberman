@@ -196,7 +196,7 @@ export class Player extends BaseEntity<Phaser.GameObjects.Image> {
         
         // Restart game after short delay
         this.context.scene.time.delayedCall(2000, () => {
-            this.context.scene.scene.start('Menu')
+            this.context.scene.scene.start('MenuScene')
         })
     }
 
