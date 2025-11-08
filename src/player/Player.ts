@@ -3,8 +3,9 @@ import type { Character } from "../characters/Characters";
 import { BaseEntity, EntityProperties } from "../core/BaseEntity";
 import { GameMode } from "../core/GameConfig";
 import { GridCoordinate } from "../core/GridSystem";
+import { MovingEntity } from "../core/MovingEntity";
 import type { Controller } from "../input/Controller";
-import { Direction, rectsIntersect } from "../util/util";
+import { Direction, getMoveIndicators, rectsIntersect } from "../util/util";
 
 
 export interface PlayerProperties extends EntityProperties {
@@ -13,7 +14,7 @@ export interface PlayerProperties extends EntityProperties {
     controller: Controller
 }
 
-export class Player extends BaseEntity<Phaser.GameObjects.Image> {
+export class Player extends MovingEntity<Phaser.GameObjects.Image> {
     
     // Manager compositions
     public character: Character
@@ -51,6 +52,15 @@ export class Player extends BaseEntity<Phaser.GameObjects.Image> {
         this.explosionRange = 1   
     }
 
+    /** Images require use of displayWidth / displayHeight */
+    getWidth(): number {
+        return this.gameObject.displayWidth
+    }
+
+    getHeight(): number {
+        return this.gameObject.displayHeight
+    }
+
 
     update(time: number, delta: number) {
 
@@ -62,23 +72,8 @@ export class Player extends BaseEntity<Phaser.GameObjects.Image> {
         }
 
         // Move
-        let moveX = 0
-        let moveY = 0
-
-        switch(this.controller.direction.get()) {
-            case Direction.LEFT:
-                moveX = -1
-                break
-            case Direction.RIGHT:
-                moveX = 1
-                break
-            case Direction.UP:
-                moveY = -1
-                break
-            case Direction.DOWN:
-                moveY = 1
-                break
-        }
+        this.direction = this.controller.direction.get()
+        let {moveX, moveY} = getMoveIndicators(this.direction)
 
         this.gameObject.x += moveX * this.speed * (delta / 1000)
         this.gameObject.y += moveY * this.speed * (delta / 1000)
@@ -92,38 +87,11 @@ export class Player extends BaseEntity<Phaser.GameObjects.Image> {
         // If player moved off their bomb cell, activate that bomb as an obstacle
         if (this.currentBomb && !rectsIntersect(this.gameObject, this.currentBomb.getGameObject())) {
             this.currentBomb = undefined
-        }
-        
-
-
-        // // todo : who should be responsible for collision detection and repositioning
-        // // Collision detection for player
-        // for (const obj of this.game.obstacles) {
-        //     const objRect = getRect(obj)
-        //     const playerRect = getRect(this.gameObject)
-
-        //     if (rectsIntersect(playerRect, objRect)) {
-        //         // Collision → push player outside of the object
-        //         const newPosition = getNearestNonintersectingPosition(playerRect, objRect, getDirection(moveX, moveY))
-        //         this.sprite.x = newPosition.x
-        //         this.sprite.y = newPosition.y
-        //         break
-        //     }
-        // }
-
-        
-
-        
-
-        // for (const pu of [...this.game.powerupManager.powerups]) {
-        //     const puRect = getRect(pu.sprite)
-        //     if (rectsIntersect(getRect(this.sprite), puRect)) {
-        //         this.game.powerupManager.getPowerUp(this, pu)
-        //     }
-        // }
+        }   
         
     }
 
+    /** Determines if the player is able to drop a bomb */
     canDropBomb() {
         // Cannot drop bomb if player has reached bomb limit
         if (this.activeBombs >= this.bombLimit) return false
@@ -132,8 +100,7 @@ export class Player extends BaseEntity<Phaser.GameObjects.Image> {
         return this.context.bombManager?.canDropBomb(this)
     }
 
-    /** Emits an event to try and drop a bomb
-     *  Should be denied if their cell is ineligible for a bomb */
+    /** Drops a bomb */
     dropBomb() {
         if (!this.canDropBomb()) return
 
@@ -194,6 +161,7 @@ export class Player extends BaseEntity<Phaser.GameObjects.Image> {
             fontStyle: 'bold'
         })
         
+        // todo : broadcast destroy
         // Restart game after short delay
         this.context.scene.time.delayedCall(2000, () => {
             this.context.scene.scene.start('MenuScene')

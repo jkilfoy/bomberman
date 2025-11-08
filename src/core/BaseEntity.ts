@@ -84,10 +84,6 @@ export abstract class BaseEntity<
         this.gameObject.y = coords.y
     }
 
-    // Override for entities that move
-    getDirection(): Direction {
-        return Direction.NONE
-    }
 
     getWidth(): number {
         return this.gameObject.width

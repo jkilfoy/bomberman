@@ -1,16 +1,16 @@
-import { BaseEntity, EntityProperties } from "../core/BaseEntity"
+import { EntityProperties } from "../core/BaseEntity"
 import { GridCoordinate } from "../core/GridSystem"
-import GameScene from "../scenes/GameScene"
+import { MovingEntity } from "../core/MovingEntity"
+import { Direction, getMoveIndicators, getRand } from "../util/util"
 
 export interface EnemyProperties extends EntityProperties {
     gridCoordinates: GridCoordinate  // the starting coordinte of the enemy
 } 
 
-export class Enemy extends BaseEntity<Phaser.GameObjects.Image> {
+export class Enemy extends MovingEntity<Phaser.GameObjects.Image> {
 
     public alive: boolean = true
     public speed: number = 100
-    public direction: {x: number, y: number} = { x: 0, y: 0 }
     public changeDirTimer = 0
 
     constructor(props: EnemyProperties) {
@@ -33,24 +33,27 @@ export class Enemy extends BaseEntity<Phaser.GameObjects.Image> {
         if (this.changeDirTimer <= 0) {
             this.changeDirection()
         }
-        
+
         // Move enemy
-        this.gameObject.x += this.direction.x * this.speed * (delta / 1000)
-        this.gameObject.y += this.direction.y * this.speed * (delta / 1000)
+        let {moveX, moveY} = getMoveIndicators(this.direction)
+        this.gameObject.x += moveX * this.speed * (delta / 1000)
+        this.gameObject.y += moveY * this.speed * (delta / 1000)
     }
 
     changeDirection() {
-        // Pick a random direction: up, down, left, right
-        const dirs = [
-            { x: 0, y: -1 },
-            { x: 0, y: 1 },
-            { x: -1, y: 0 },
-            { x: 1, y: 0 }
-        ]
-        this.direction = Phaser.Utils.Array.GetRandom(dirs)
+        // Pick a random direction: up, down, left, right or none
+        this.direction = getRand(Object.keys(Direction))
 
         // Reset change direction timer
         this.changeDirTimer = Phaser.Math.Between(600, 2500)
+    }
+
+    getWidth(): number {
+        return this.gameObject.displayWidth
+    }
+
+    getHeight(): number {
+        return this.gameObject.displayHeight
     }
 
     die() {
