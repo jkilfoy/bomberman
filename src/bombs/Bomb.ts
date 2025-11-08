@@ -1,52 +1,44 @@
+import { BaseEntity, EntityProperties } from "../core/BaseEntity"
+import { GameContext } from "../core/GameContext"
+import { GridCoordinate } from "../core/GridSystem"
 import { Player } from "../player/Player"
-import Game from "../scenes/Game"
 
-export interface BombProperties {
-    col: number           // column of the bomb
-    row: number           // row of the bomb
+export interface BombProperties extends EntityProperties {
+    gridCoordinate: GridCoordinate    // grid coordinates of the bomb
     radius: number          // radius of the bomb sprite 
 
-    player: Player          // the player who own the bomb
+    player: Player          // the player who owns the bomb
 
     timerDuration?: number  // the time before bomb detonate
     range?: number          // explosive range of the bomb
     color?: number          // color of the bomb sprite
 }
 
-export class Bomb {
-    public sprite: Phaser.GameObjects.Arc
+export class Bomb extends BaseEntity<Phaser.GameObjects.Arc> {
+    
     public range: number
     public timerDuration: number
     public detonated = false;
-    public player: Player
-    private game: Game
+    public player: Player // come back to this
 
-    constructor(game: Game, props: BombProperties) {
-        this.game = game;
+    constructor(props: BombProperties) {
+        const {x, y} = props.context.grid.gridToWorld(props.gridCoordinate)
+        let sprite = props.context.scene.add.circle(
+                x, 
+                y, 
+                props.radius, 
+                props.color ?? 0x4444ff)
+
+        super(props, sprite)
+
         this.player = props.player
-        this.sprite = game.add.circle(
-            game.getX(props.col), 
-            game.getY(props.row), 
-            props.radius, 
-            props.color ?? 0x4444ff)
-
         this.range = props.range ?? 1;
         this.timerDuration = props.timerDuration ?? 3000
     }
 
     detonate() {
         if (!this.detonated) {
-            this.sprite.destroy()
+            this.gameObject.destroy() // todo : emit event?
         }
-    }
-
-    getColumn(): number {
-        if (this.detonated) return -1
-        return this.game.getColumn(this.sprite.x)
-    }
-
-    getRow(): number {
-        if (this.detonated) return -1
-        return this.game.getRow(this.sprite.y) 
     }
 }

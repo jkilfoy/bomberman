@@ -1,36 +1,36 @@
-import Game from "../scenes/Game"
+import { BaseEntity, EntityProperties } from "../core/BaseEntity"
+import { GridCoordinate } from "../core/GridSystem"
+import GameScene from "../scenes/GameScene"
 import { PowerUpData, PowerUpType } from "./PowerUpManager"
 
-export interface PowerUpProps {
-    col: number          
-    row: number
+export interface PowerUpProperties extends EntityProperties {
+    gridCoordinates: GridCoordinate
     data: PowerUpData 
 }
 
-export class PowerUp {
+export class PowerUp extends BaseEntity<Phaser.GameObjects.Arc> {
 
-    public sprite: Phaser.GameObjects.Arc
-
-    public col: number
-    public row: number
     public type: PowerUpType
     public text: string
     public color: string
 
-    constructor(private game: Game, props: PowerUpProps) {
-        this.sprite = game.add.circle(game.getX(props.col), game.getY(props.row), game.cellSize * 0.25, props.data.colorCode)
-        this.col = props.col
-        this.row = props.row
-        this.type = props.data.type
+    constructor(props: PowerUpProperties) {
+        const {x, y} = props.context.grid.gridToWorld(props.gridCoordinates)
+
+        let sprite = props.context.scene.add.circle(
+            x, 
+            y, 
+            props.context.grid.cellSize * 0.25, 
+            props.data.colorCode
+        )
+
+        super(props, sprite)
+
+        // todo : consider removing data, putting attributes directly on props
+        this.type = props.data.type   
         this.text = props.data.text
         this.color = props.data.color
     }
 
-    destroy() {
-        this.sprite.destroy()
-    }
-
 }
-
-
 

@@ -1,5 +1,7 @@
 // Utility functions for common game logic
 
+import { GridCoordinate, WorldCoordinate } from "../core/GridSystem";
+
 /**
  * Returns a simplified rectangle object from a Phaser GameObject
  * (assumes it has x, y, width, and height properties)
@@ -27,39 +29,41 @@ export function rectsIntersect(r1, r2) {
   )
 }
 
-export function getDirection(moveX, moveY) {
-    return moveX === -1 ? DIRECTIONS.LEFT
-                : moveX === 1 ? DIRECTIONS.RIGHT
-                : moveY === -1 ? DIRECTIONS.UP
-                : moveY === 1 ? DIRECTIONS.DOWN
-                : DIRECTIONS.NONE
-}
+// export function getDirection(moveX, moveY) {
+//     return moveX === -1 ? DIRECTIONS.LEFT
+//                 : moveX === 1 ? DIRECTIONS.RIGHT
+//                 : moveY === -1 ? DIRECTIONS.UP
+//                 : moveY === 1 ? DIRECTIONS.DOWN
+//                 : DIRECTIONS.NONE
+// }
 
 /**
  * Returns the nearest {x, y} position where r1 would not intersect with r2,
  * provided the direction of attempted movement 
  */
-export function getNearestNonintersectingPosition(r1, r2, direction) {
+export function getNearestNonintersectingPosition(r1, r2, direction: Direction): WorldCoordinate {
     if (!rectsIntersect(r1, r2)) return r1;
     const result = {x: r1.x, y: r1.y}
     switch(direction) {
-        case DIRECTIONS.LEFT:
+        case Direction.LEFT:
             result.x = r2.x + (r2.width + r1.width)/2 + 1
             break
-        case DIRECTIONS.RIGHT:
+        case Direction.RIGHT:
             result.x = r2.x - (r2.width + r1.width)/2 - 1
             break 
-        case DIRECTIONS.UP: 
+        case Direction.UP: 
             result.y = r2.y + (r2.height + r1.height)/2 + 1
             break
-        case DIRECTIONS.DOWN: 
+        case Direction.DOWN: 
             result.y = r2.y - (r2.height + r1.height)/2 - 1
             break
     }
     return result;
 }
 
-export const DIRECTIONS = {NONE: 0, LEFT: 1, RIGHT: 2, UP: 3, DOWN: 4}
+export enum Direction {
+    NONE, LEFT, RIGHT, UP, DOWN
+}
 
 
 /**

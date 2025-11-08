@@ -1,0 +1,146 @@
+// CollisionManager.ts
+import Phaser from "phaser";
+
+import { Bomb } from "../bombs/Bomb";
+import { Enemy } from "../enemies/Enemy";
+import { Explosion } from "../explosions/Explosion";
+import { Obstacle } from "../obstacle/Obstacle";
+import { Player } from "../player/Player";
+import { PowerUp } from "../powerups/PowerUp";
+import { Direction } from "../util/util";
+import { BaseEntity } from "./BaseEntity";
+import { GameContext } from "./GameContext";
+
+export class CollisionManager {
+    constructor(private context: GameContext) { }
+
+    update(entities: {
+        players: readonly Player[];
+        enemies: readonly Enemy[];
+        obstacles: readonly Obstacle[];
+        powerups: readonly PowerUp[];
+        bombs: readonly Bomb[];
+        explosions: readonly Explosion[];
+    }) {
+        
+        const { players, enemies, obstacles, powerups, bombs, explosions } = entities;
+
+        // --- Player Collisions ---
+        for (const player of players) {
+            if (!player.alive) continue;
+
+            // Player vs obstacles
+            for (const obstacle of obstacles) {
+                if (this.overlaps(player, obstacle)) {
+                    // todo : check
+                    this.resolveOverlap(player, obstacle);
+                }
+            }
+
+            // player vs bombs
+            for (const bomb of bombs) {
+                if (this.overlaps(player, bomb) && player.currentBomb !== bomb) {
+                    this.resolveOverlap(player, bomb)
+                }
+            }
+
+            // Player vs powerups
+            for (const powerup of powerups) {
+                if (this.overlaps(player, powerup)) {
+                    this.context.powerUpManager?.getPowerUp(player, powerup)
+                }
+            }
+
+            // Player vs enemies
+            for (const enemy of enemies) {
+                if (this.overlaps(player, enemy)) {
+                    player.die()
+                    // GameEvents.emit("player:die", player);
+                }
+            }
+        }
+
+        // --- Enemy Collisions ---
+        for (const enemy of enemies) {
+            for (const obstacle of obstacles) {
+                if (this.overlaps(enemy, obstacle)) {
+                    this.resolveOverlap(enemy, obstacle);
+                    enemy.changeDirection();
+                }
+            }
+        }
+
+        // --- Explosion Collisions ---
+        for (const explosion of explosions) {
+
+            for (const player of players) {
+                if (this.overlaps(player, explosion)) {
+                    player.die()
+                    // GameEvents.emit("player:die", player);
+                }
+            }
+
+            for (const enemy of enemies) {
+                if (this.overlaps(enemy, explosion)) {
+                    enemy.die()
+                    // GameEvents.emit("enemy:die", enemy);
+                }
+            }
+
+            for (const obstacle of obstacles) {
+                if (obstacle.isDestructible() && this.overlaps(obstacle, explosion)) {
+                    // GameEvents.emit("obstacle:destroy", obstacle);
+                }
+            }
+        }
+    }
+
+    // Basic AABB (axis-aligned bounding box) intersection
+    private overlaps(a: BaseEntity<any>, b: BaseEntity<any>): boolean {
+        const ab = a.getGameObject().getBounds();
+        const bb = b.getGameObject().getBounds();
+        return Phaser.Geom.Intersects.RectangleToRectangle(ab, bb);
+    }
+
+    // Pushes entity out of overlap
+    private resolveOverlap(moving: BaseEntity<any>, obstacle: BaseEntity<any>) {
+        if (!this.overlaps(moving, obstacle)) return
+
+        let r1 = moving.getRect()
+        let r2 = obstacle.getRect() 
+        switch(moving.getDirection()) {
+            case Direction.LEFT:
+                r1.coords.x = r2.coords.x + (r2.width + r1.width)/2 + 1
+                break
+            case Direction.RIGHT:
+                r1.coords.x = r2.coords.x - (r2.width + r1.width)/2 - 1
+                break 
+            case Direction.UP: 
+                r1.coords.y = r2.coords.y + (r2.height + r1.height)/2 + 1
+                break
+            case Direction.DOWN: 
+                r1.coords.y = r2.coords.y - (r2.height + r1.height)/2 - 1
+                break
+        }
+
+        moving.setWorldCoordinate(r1.coords)
+        
+        //         this.sprite.x = newPosition.x
+        //         this.sprite.y = newPosition.y
+
+
+        // const mb = moving.gameObject.getBounds();
+        // const ob = obstacle.gameObject.getBounds();
+
+        // const dx = (mb.centerX - ob.centerX);
+        // const dy = (mb.centerY - ob.centerY);
+        // const absX = Math.abs(dx);
+        // const absY = Math.abs(dy);
+
+        // if (absX > absY) {
+        //     moving.gameObject.x += dx > 0 ? ob.width / 2 : -ob.width / 2;
+        // } else {
+        //     moving.gameObject.y += dy > 0 ? ob.height / 2 : -ob.height / 2;
+        // }
+    }
+}

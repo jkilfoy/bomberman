@@ -1,22 +1,37 @@
 import Phaser from 'phaser';
 import { GameEvents } from './EventManager';
+import { GameContext } from './GameContext';
+import { GridCoordinate, WorldCoordinate } from './GridSystem';
+import { Direction } from '../util/util';
+
+/**
+ * Properties to be passed to a constructor of an entity
+ * Child entities should have their constructor accept an extenion of these properties  
+ */
+export interface EntityProperties {
+    context: GameContext
+}
 
 /**
  * A common logical base for all visible game entities.
  * Each entity wraps a Phaser.GameObject
  */
 export abstract class BaseEntity<
-    T extends Phaser.GameObjects.GameObject & Phaser.GameObjects.Components.Transform
+    T extends Phaser.GameObjects.GameObject & Phaser.GameObjects.Components.Transform & {width: number, height: number}
 > {
-    protected scene: Phaser.Scene;
+    protected context: GameContext;
     protected gameObject: T;
     protected events = GameEvents
-    
-    protected alive = true;
 
-    constructor(scene: Phaser.Scene, gameObject: T) {
-        this.scene = scene;
+
+    constructor(props: EntityProperties, gameObject: T) {
+        this.context = props.context;
         this.gameObject = gameObject;
+    }
+
+    /** Public access to gameObject */
+    getGameObject(): T {
+        return this.gameObject
     }
 
     /** Called each frame by managers or the scene */
@@ -40,32 +55,55 @@ export abstract class BaseEntity<
     }
 
     /** Marks this entity as destroyed and removes its game object from the scene */
-    destroyEntity(): void {
-        if (!this.alive) return;
-        this.alive = false;
+    destroy(): void {
         this.gameObject.destroy();
     }
 
-    /** Whether this entity is still active/alive */
-    isAlive(): boolean {
-        return this.alive;
+
+    /**
+     * Returns grid coordinates of the entity
+     */
+    getGridCoordinates(): GridCoordinate {
+        return this.context.grid.worldToGrid(this.getWorldCoordinates())
     }
 
-    /** Position helpers (useful abstraction layer) */
-    setPosition(x: number, y: number): void {
-        (this.gameObject as any).setPosition?.(x, y);
+    setGridCoordinates(coords: GridCoordinate) {
+        const worldCoords: WorldCoordinate = this.context.grid.gridToWorld(coords)
+        this.setWorldCoordinate(worldCoords)
     }
 
-    getPosition(): Phaser.Math.Vector2 {
-        const go = this.gameObject as any;
-        return new Phaser.Math.Vector2(go.x ?? 0, go.y ?? 0);
+    /**
+     * Returns world coordinates of the entity
+     */
+    getWorldCoordinates(): WorldCoordinate {
+        return {x: this.gameObject.x, y: this.gameObject.y}
     }
 
-    getX() {
-        return this.gameObject.x
+    setWorldCoordinate(coords: WorldCoordinate) {
+        this.gameObject.x = coords.x
+        this.gameObject.y = coords.y
     }
 
-    getY() {
-        return this.gameObject.y
+    // Override for entities that move
+    getDirection(): Direction {
+        return Direction.NONE
     }
+
+    getWidth(): number {
+        return this.gameObject.width
+    }
+
+    getHeight(): number {
+        return this.gameObject.height
+    }
+
+    getRect(): {coords: WorldCoordinate, width: number, height: number} {
+        return {
+            coords: this.getWorldCoordinates(),
+            width: this.getWidth(),
+            height: this.getHeight()
+        }
+    }
+
+    
 }

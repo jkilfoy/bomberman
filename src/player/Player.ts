@@ -1,15 +1,22 @@
 import { Bomb } from "../bombs/Bomb";
 import type { Character } from "../characters/Characters";
+import { BaseEntity, EntityProperties } from "../core/BaseEntity";
+import { GameMode } from "../core/GameConfig";
+import { GridCoordinate } from "../core/GridSystem";
 import type { Controller } from "../input/Controller";
-import Game from "../scenes/Game";
-import modes from "../util/modes";
-import { getDirection, getNearestNonintersectingPosition, getRect, rectsIntersect } from "../util/util";
+import { Direction, rectsIntersect } from "../util/util";
 
-export class Player {
 
+export interface PlayerProperties extends EntityProperties {
+    gridCoordinates: GridCoordinate
+    character: Character
+    controller: Controller
+}
+
+export class Player extends BaseEntity<Phaser.GameObjects.Image> {
+    
     // Manager compositions
     public character: Character
-    public sprite: Phaser.GameObjects.Image
     public controller: Controller
 
     // Gameobject data
@@ -18,87 +25,102 @@ export class Player {
     public invincible: boolean = false
 
     public shield: boolean = false
-    public shieldSprite: Phaser.GameObjects.Arc | null = null
+    public shieldSprite: Phaser.GameObjects.Arc | undefined
 
     public activeBombs: number = 0
     public bombLimit: number = 1
     public explosionRange: number
-    public bombTimerDuration: number = 3000
+    public bombTimerDuration: number = 3000 
 
     // Keeps track of the bomb a player is on so it is not considered during collision detection
-    public currentBomb: Bomb | null = null
-    
+    public currentBomb: Bomb | undefined
 
-    private game: Game
+    constructor(props: PlayerProperties) {
+        const {x, y} = props.context.grid.gridToWorld(props.gridCoordinates)
+        let sprite = props.context.scene.add.image(
+            x, 
+            y, 
+            props.character.key).setScale(props.character.scale)
 
-    constructor(scene: Game, character: Character, controller: Controller, 
-                x: number, y: number) {
-        this.game = scene
-        this.character = character
-        this.controller = controller
-        this.sprite = scene.add.image(x, y, character.key)
-        this.sprite.setScale(character.scale)
+        super(props, sprite)        
 
+        this.character = props.character
+        this.controller = props.controller
+        
         this.speed = 200
-        this.explosionRange = 1
+        this.explosionRange = 1   
     }
 
 
     update(time: number, delta: number) {
-        // Player Controls : movement and bomb dropping
+
         if (!this.alive) return
-
-        let moveX = 0
-        let moveY = 0
-
-        if (this.controller.left.isDown()) moveX = -1
-        else if (this.controller.right.isDown()) moveX = 1
-        else if (this.controller.up.isDown()) moveY = -1
-        else if (this.controller.down.isDown()) moveY = 1
 
         // Drop Bomb
         if (this.controller.bomb.justPressed()) {
             this.dropBomb()
         }
 
-        // Move player
-        const xIncrement = moveX * this.speed * (delta / 1000)
-        const yIncrement = moveY * this.speed * (delta / 1000)
-        this.sprite.x += xIncrement
-        this.sprite.y += yIncrement
+        // Move
+        let moveX = 0
+        let moveY = 0
 
-        // Collision detection for player
-        for (const obj of this.game.obstacles) {
-            const objRect = getRect(obj)
-            const playerRect = getRect(this.sprite)
-
-            if (rectsIntersect(playerRect, objRect)) {
-                // Collision → push player outside of the object
-                const newPosition = getNearestNonintersectingPosition(playerRect, objRect, getDirection(moveX, moveY))
-                this.sprite.x = newPosition.x
-                this.sprite.y = newPosition.y
+        switch(this.controller.direction.get()) {
+            case Direction.LEFT:
+                moveX = -1
                 break
-            }
+            case Direction.RIGHT:
+                moveX = 1
+                break
+            case Direction.UP:
+                moveY = -1
+                break
+            case Direction.DOWN:
+                moveY = 1
+                break
         }
+
+        this.gameObject.x += moveX * this.speed * (delta / 1000)
+        this.gameObject.y += moveY * this.speed * (delta / 1000)
 
         // Move shield alongside player
         if (this.shieldSprite != null) {
-            this.shieldSprite.setPosition(this.sprite.x, this.sprite.y)
+            this.shieldSprite.setPosition(this.gameObject.x, this.gameObject.y)
         }
 
         // -- Bomb obstacle activation 
         // If player moved off their bomb cell, activate that bomb as an obstacle
-        if (this.currentBomb && !rectsIntersect(getRect(this.sprite), this.currentBomb.sprite)) {
-            this.game.obstacles.push(this.currentBomb.sprite)
-            this.currentBomb = null
+        if (this.currentBomb && !rectsIntersect(this.gameObject, this.currentBomb.getGameObject())) {
+            this.currentBomb = undefined
         }
+        
 
-        for (const pu of [...this.game.powerupManager.powerups]) {
-            const puRect = getRect(pu.sprite)
-            if (rectsIntersect(getRect(this.sprite), puRect)) {
-                this.game.powerupManager.getPowerUp(this, pu)
-            }
-        }
+
+        // // todo : who should be responsible for collision detection and repositioning
+        // // Collision detection for player
+        // for (const obj of this.game.obstacles) {
+        //     const objRect = getRect(obj)
+        //     const playerRect = getRect(this.gameObject)
+
+        //     if (rectsIntersect(playerRect, objRect)) {
+        //         // Collision → push player outside of the object
+        //         const newPosition = getNearestNonintersectingPosition(playerRect, objRect, getDirection(moveX, moveY))
+        //         this.sprite.x = newPosition.x
+        //         this.sprite.y = newPosition.y
+        //         break
+        //     }
+        // }
+
+        
+
+        
+
+        // for (const pu of [...this.game.powerupManager.powerups]) {
+        //     const puRect = getRect(pu.sprite)
+        //     if (rectsIntersect(getRect(this.sprite), puRect)) {
+        //         this.game.powerupManager.getPowerUp(this, pu)
+        //     }
+        // }
         
     }
 
@@ -106,30 +128,33 @@ export class Player {
         // Cannot drop bomb if player has reached bomb limit
         if (this.activeBombs >= this.bombLimit) return false
 
-        // Cannot drop bomb if bomb manager says no
-        return this.game.bombManager.canDropBomb(this)
+        // Cannot drop bomb if BombManager says a bomb is already present
+        return this.context.bombManager?.canDropBomb(this)
     }
 
+    /** Emits an event to try and drop a bomb
+     *  Should be denied if their cell is ineligible for a bomb */
     dropBomb() {
         if (!this.canDropBomb()) return
 
-        this.currentBomb = this.game.bombManager.dropBomb(this);
+        this.currentBomb = this.context.bombManager?.playerDropBomb(this)
         this.activeBombs += 1
     }
-
     
 
     bombDetonated(bomb: Bomb) {
         this.activeBombs -= 1
         if (this.currentBomb === bomb) {
-            this.currentBomb = null
+            this.currentBomb = undefined
         }
     }
 
     acquireShield() {
         if (!this.shield) {
             this.shield = true
-            this.shieldSprite = this.game.add.circle(this.sprite.x, this.sprite.y, this.sprite.displayHeight/2, 0xccff00, 0.7)   // todo : shield color
+            this.shieldSprite = this.context.scene.add.circle(
+                this.gameObject.x, this.gameObject.y, this.gameObject.displayHeight/2, 0xccff00, 0.7   // todo : shield color
+            )
         }
     }
 
@@ -139,8 +164,8 @@ export class Player {
       this.invincible = true
       this.shield = false;
       this.shieldSprite?.destroy();
-      this.shieldSprite = null;
-      this.game.time.delayedCall(1000, () => {
+      this.shieldSprite = undefined;
+      this.context.scene.time.delayedCall(1000, () => {
         this.invincible = false
       })
     }
@@ -148,7 +173,7 @@ export class Player {
 
     die() {
         // in practise mode, no death. Same if player invincible
-        if (this.game.mode === modes.practise || this.invincible) 
+        if (this.context.config.mode === GameMode.practise  || this.invincible) 
             return
 
         // if shielded, use shield instead
@@ -159,37 +184,20 @@ export class Player {
 
         // Kill player
         this.alive = false
+        this.gameObject.setTint(0xff0000)
 
-        // Simple feedback for now
-        this.game.cameras.main.shake(300, 0.02)
-        this.game.add.text(this.sprite.x - 40, this.sprite.y - 50, '💀 You Died!', {
+        // Shake camera
+        this.context.scene.cameras.main.shake(300, 0.02)
+        this.context.scene.add.text(this.gameObject.x - 40, this.gameObject.y - 50, '💀 You Died!', {
             fontSize: 28,
             color: '#ff4444',
             fontStyle: 'bold'
         })
-        this.sprite.setTint(0xff0000)
-
-        // Optional: Restart game after short delay
-        this.game.time.delayedCall(2000, () => {
-            this.game.scene.start('Menu')
+        
+        // Restart game after short delay
+        this.context.scene.time.delayedCall(2000, () => {
+            this.context.scene.scene.start('Menu')
         })
     }
-
-    destroy() {
-        this.sprite.destroy()
-    }
-
-
-    getColumn(): number {
-        // console.log("player column : ", this.game.getColumn(this.sprite.x))
-        return this.game.getColumn(this.sprite.x)
-    }
-
-    getRow(): number {
-        // console.log("player row : ", this.game.getRow(this.sprite.y) )
-        return this.game.getRow(this.sprite.y) 
-    }
-
-
 
 }

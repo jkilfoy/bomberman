@@ -1,8 +1,8 @@
 import characters from "../characters/Characters"
 import { Character } from "../characters/Characters"
-import modes from "../util/modes"
+import { GameMode } from "../core/GameConfig"
 
-export default class Menu extends Phaser.Scene {
+export default class MenuScene extends Phaser.Scene {
 
     // Object to store character icons
     characterIcons: {[id: string] : Phaser.GameObjects.Image} = { }
@@ -50,7 +50,7 @@ export default class Menu extends Phaser.Scene {
         startGameButton.on('pointerup', () => {
             this.scene.start('Game', { 
                 selectedCharacter: this.selectedCharacter,
-                mode: modes.arena
+                mode: GameMode.arena
             })
         });
 
@@ -75,7 +75,7 @@ export default class Menu extends Phaser.Scene {
         practiseButton.on('pointerup', () => {
             this.scene.start('Game', { 
                 selectedCharacter: this.selectedCharacter,
-                mode: modes.practise
+                mode: GameMode.practise
             })
         });
 

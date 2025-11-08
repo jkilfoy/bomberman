@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
 import { Controller } from './Controller'
+import { Direction } from '../util/util'
 
 export default class KeyboardController implements Controller {
   private scene: Phaser.Scene
@@ -29,6 +30,21 @@ export default class KeyboardController implements Controller {
   get bomb() {
     return {
       justPressed: () => Phaser.Input.Keyboard.JustDown(this.keys.bomb)
+    }
+  }
+
+
+  // todo : fix
+  get direction() { 
+    return {
+      get : ()  => {
+        if (this.left.isDown())         return Direction.LEFT
+        else if (this.right.isDown())   return Direction.RIGHT
+        else if (this.up.isDown())      return Direction.UP
+        else if (this.down.isDown())    return Direction.DOWN
+        
+        return Direction.NONE
+      }
     }
   }
 }

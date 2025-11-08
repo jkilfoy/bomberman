@@ -6,8 +6,7 @@ export interface Map {
 }
 
 export enum CellType {
-    PLAYER,         // a starting location for a player
-    WALL,           // an obstacle that cannot be destroyed
-    BOX,            // an obstacle that can be destroyed
-    EMPTY,          // an empty cell which could potentially hold
+    WALL,           // an indestructible obstacle
+    BOX,            // a destructible obstacle that may drop powerups
+    EMPTY,          // an empty cell
 }

@@ -1,6 +1,9 @@
 import { CellType, Map } from "./Map";
 
 
+/**
+ * A basic map in bomberman using Walls and Boxes
+ */
 export class BasicMap implements Map {
     public rows: number
     public cols: number
