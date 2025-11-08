@@ -67,6 +67,8 @@ export class BombManager extends EntityManager<Bomb> {
     detonate(bomb: Bomb) {
         if (bomb.detonated) return // bomb has already detonated
 
+        bomb.detonate()
+
         // Keep track of any bombs caught in this explosion
         let chainedReactions: Bomb[] = []
         
