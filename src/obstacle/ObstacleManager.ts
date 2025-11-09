@@ -57,28 +57,28 @@ export class ObstacleManager extends EntityManager<Obstacle> {
 
         // Top wall
         this.spawn(
-            {col: this.context.grid.width / 2, row: -2},
+            {col: this.context.grid.width / 2, row: -1.3},
             ObstacleType.unbreakable,
             worldWidth, wallThickness
         )
        
         // Bottom wall
         this.spawn(
-            {col: this.context.grid.width / 2, row: this.context.grid.height + 1},
+            {col: this.context.grid.width / 2, row: this.context.grid.height + 0.3},
             ObstacleType.unbreakable,
             worldWidth, wallThickness
         )
 
         // Left wall
         this.spawn(
-            {col: -2, row: this.context.grid.height / 2},
+            {col: -1.3, row: this.context.grid.height / 2},
             ObstacleType.unbreakable,
             wallThickness, worldHeight
         )
 
         // Right wall
         this.spawn(
-            {col: this.context.grid.width + 1, row: this.context.grid.height / 2},
+            {col: this.context.grid.width + 0.3, row: this.context.grid.height / 2},
             ObstacleType.unbreakable,
             wallThickness, worldHeight
         )
