@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { GameEvents } from './EventManager';
 import { GameContext } from './GameContext';
 import { GridCoordinate, WorldCoordinate } from './GridSystem';
-import { Direction } from '../util/util';
+import { Rectangle } from '../collision/Rectangle';
 
 /**
  * Properties to be passed to a constructor of an entity
@@ -93,9 +93,11 @@ export abstract class BaseEntity<
         return this.gameObject.height
     }
 
-    getRect(): {coords: WorldCoordinate, width: number, height: number} {
+    getRect(): Rectangle {
+        const {x, y} = this.getWorldCoordinates()
         return {
-            coords: this.getWorldCoordinates(),
+            x: x,
+            y: y,
             width: this.getWidth(),
             height: this.getHeight()
         }

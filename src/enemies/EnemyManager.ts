@@ -1,8 +1,6 @@
 
 import { EntityManager } from "../core/EntityManager"
 import { GridCoordinate } from "../core/GridSystem"
-import GameScene from "../scenes/GameScene"
-import { getRect, rectsIntersect } from "../util/util"
 import { Enemy, EnemyProperties } from "./Enemy"
 
 export class EnemyManager extends EntityManager<Enemy> {

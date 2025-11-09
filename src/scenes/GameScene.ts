@@ -1,6 +1,6 @@
 import { BombManager } from "../bombs/BombManager"
 import characters, { Character } from "../characters/Characters"
-import { CollisionManager } from "../core/CollisionManager"
+import { CollisionManager } from "../collision/CollisionManager"
 import { GameEvents } from "../core/EventManager"
 import { GameConfig } from "../core/GameConfig"
 import { GameContext } from "../core/GameContext"

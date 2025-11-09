@@ -1,11 +1,12 @@
 import { Bomb } from "../bombs/Bomb";
 import type { Character } from "../characters/Characters";
+import { rectsIntersect } from "../collision/Rectangle";
 import { EntityProperties } from "../core/BaseEntity";
 import { GameMode } from "../core/GameConfig";
 import { GridCoordinate } from "../core/GridSystem";
 import { MovingEntity } from "../core/MovingEntity";
 import type { Controller } from "../input/Controller";
-import { getMoveIndicators, rectsIntersect } from "../util/util";
+import { getMoveIndicators } from "../util/util";
 
 
 export interface PlayerProperties extends EntityProperties {

@@ -1,16 +1,16 @@
 // CollisionManager.ts
-import Phaser from "phaser";
 
 import { Bomb } from "../bombs/Bomb";
+import { BaseEntity } from "../core/BaseEntity";
+import { GameContext } from "../core/GameContext";
+import { MovingEntity } from "../core/MovingEntity";
 import { Enemy } from "../enemies/Enemy";
 import { Explosion } from "../explosions/Explosion";
 import { Obstacle } from "../obstacle/Obstacle";
 import { Player } from "../player/Player";
 import { PowerUp } from "../powerups/PowerUp";
 import { Direction } from "../util/util";
-import { BaseEntity } from "./BaseEntity";
-import { GameContext } from "./GameContext";
-import { MovingEntity } from "./MovingEntity";
+import { rectsIntersect } from "./Rectangle";
 
 export class CollisionManager {
     constructor(private context: GameContext) { }
@@ -33,7 +33,6 @@ export class CollisionManager {
             // Player vs obstacles
             for (const obstacle of obstacles) {
                 if (this.overlaps(player, obstacle)) {
-                    // todo : check
                     this.pushMoverBack(player, obstacle);
                 }
             }
@@ -55,8 +54,7 @@ export class CollisionManager {
             // Player vs enemies
             for (const enemy of enemies) {
                 if (this.overlaps(player, enemy)) {
-                    player.die()
-                    // GameEvents.emit("player:die", player);
+                    this.context.playerManager?.kill(player)
                 }
             }
         }
@@ -106,9 +104,7 @@ export class CollisionManager {
 
     // Basic AABB (axis-aligned bounding box) intersection
     private overlaps(a: BaseEntity<any>, b: BaseEntity<any>): boolean {
-        const ab = a.getGameObject().getBounds();
-        const bb = b.getGameObject().getBounds();
-        return Phaser.Geom.Intersects.RectangleToRectangle(ab, bb);
+        return rectsIntersect(a.getRect(), b.getRect())
     }
 
     // Pushes entity out of overlap
@@ -119,19 +115,19 @@ export class CollisionManager {
         let r2 = obstacle.getRect() 
         switch(moving.getDirection()) {
             case Direction.LEFT:
-                r1.coords.x = r2.coords.x + (r1.width + r2.width)/2 + 1
+                r1.x = r2.x + (r1.width + r2.width)/2 + 1
                 break
             case Direction.RIGHT:
-                r1.coords.x = r2.coords.x - (r1.width + r2.width)/2 - 1
+                r1.x = r2.x - (r1.width + r2.width)/2 - 1
                 break 
             case Direction.UP: 
-                r1.coords.y = r2.coords.y + (r1.height + r2.height)/2 + 1
+                r1.y = r2.y + (r1.height + r2.height)/2 + 1
                 break
             case Direction.DOWN: 
-                r1.coords.y = r2.coords.y - (r1.height + r2.height)/2 - 1
+                r1.y = r2.y - (r1.height + r2.height)/2 - 1
                 break
         }
 
-        moving.setWorldCoordinate(r1.coords)
+        moving.setWorldCoordinate({x: r1.x, y: r1.y})
     }
 }
