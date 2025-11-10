@@ -1,10 +1,12 @@
-import type { Server, Socket } from 'socket.io';
+import type { Server } from 'socket.io';
 import { GameEngine, GameEngineOptions } from '../../src/game/GameEngine';
 import { GameMode } from '../../src/core/GameConfig';
 import type { LobbyEntry } from '../lobby/LobbyManager';
 import { PlayerInputMessage, GameUpdateMessage } from '../../src/game/net/types';
+import { GameStateSnapshot } from '../../src/game/state/GameState';
 
 const MATCH_TICK_INTERVAL = 1000 / 60;
+const MATCH_DURATION_MS = 2 * 60 * 1000;
 
 /**
  * Class representing a game match. Handles game state, player inputs, and communication with clients.
@@ -16,12 +18,15 @@ export class Match {
   private tickHandle?: NodeJS.Timeout;
 
   // Maps socket IDs to their input handlers for easy removal on match end
-  private socketHandlers = new Map<string, (message: PlayerInputMessage) => void>();
+  private socketHandlers = new Map<string, { input: (msg: PlayerInputMessage) => void; disconnect: () => void }>();
+  private startTime = Date.now();
+  private finished = false;
 
   constructor(
     private readonly io: Server,
     private readonly id: string,
     private readonly players: LobbyEntry[],
+    private readonly onEnded?: (matchId: string) => void,
   ) {
     this.engine = new GameEngine(this.buildOptions(players));
     this.attachSockets();
@@ -57,12 +62,14 @@ export class Match {
         return;
       } 
       entry.socket.join(this.roomName);
-      const handler = (message: PlayerInputMessage) => {
+      const inputHandler = (message: PlayerInputMessage) => {
         if (message.playerId !== entry.playerId) return;
         this.engine.enqueueInput(message.input);
       };
-      this.socketHandlers.set(entry.socket.id, handler);
-      entry.socket.on('player:input', handler);
+      const disconnectHandler = () => this.onPlayerDisconnect(entry.playerId);
+      this.socketHandlers.set(entry.socket.id, { input: inputHandler, disconnect: disconnectHandler });
+      entry.socket.on('player:input', inputHandler);
+      entry.socket.once('disconnect', disconnectHandler);
     });
   }
 
@@ -81,9 +88,8 @@ export class Match {
     return `match:${this.id}`;
   }
 
-  // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  // Main Match tick loop
   // Starts the game tick loop. This advances the engine and sends updates to clients at each tick.
-  // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   private startTickLoop() {
     this.tickHandle = setInterval(() => {
       this.engine.advance();
@@ -96,21 +102,47 @@ export class Match {
         delta,
       };
       this.io.to(this.roomName).emit('game:update', update);
+      this.evaluateEndConditions(snapshot);
     }, MATCH_TICK_INTERVAL);
   }
 
+  private evaluateEndConditions(snapshot: GameStateSnapshot) {
+    const alivePlayers = Object.values(snapshot.players).filter((p) => p.alive).length;
+    if (alivePlayers <= 1) {
+      this.endMatch(alivePlayers === 1 ? 'winner' : 'all-dead');
+      return;
+    }
+
+    const elapsed = Date.now() - this.startTime;
+    if (elapsed >= MATCH_DURATION_MS) {
+      this.endMatch('timeout');
+    }
+  }
+
+  private onPlayerDisconnect(playerId: string) {
+    this.engine.removePlayer(playerId);
+    const snapshot = this.engine.getSnapshot();
+    this.evaluateEndConditions(snapshot);
+  }
+
+
   // Ends the match, cleans up resources, and notifies clients. 
   endMatch(reason: string) {
+    if (this.finished) return;
+    this.finished = true;
     if (this.tickHandle) clearInterval(this.tickHandle);
     this.io.to(this.roomName).emit('match:end', { matchId: this.id, reason });
     this.players.forEach((entry) => {
       if (!entry.socket) return;
-      const handler = this.socketHandlers.get(entry.socket.id);
-      if (handler) entry.socket.off('player:input', handler);
+      const handlers = this.socketHandlers.get(entry.socket.id);
+      if (handlers) {
+        entry.socket.off('player:input', handlers.input);
+        entry.socket.off('disconnect', handlers.disconnect);
+      }
       entry.socket.leave(this.roomName);
     });
     this.socketHandlers.clear();
-
-    console.log(`[Match.endMatch] Match ${this.id} ended. Reason: ${reason}`);
+    this.onEnded?.(this.id);
+    console.log(`[Match.endMatch] Match ${this.id} ended: ${reason}`);
   }
 }

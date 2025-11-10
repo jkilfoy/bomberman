@@ -24,7 +24,10 @@ const startMatch = (players: LobbyEntry[]) => {
   const matchId = `match-${matchCounter}`;
   console.log(`[Match] Starting ${matchId} with: ${players.map((p) => p.playerId).join(', ')}`);
   players.forEach((entry) => entry.socket?.emit('match:start', { matchId, playerId: entry.playerId }));
-  const match = new Match(io, matchId, players);
+  const match = new Match(io, matchId, players, (finishedId) => {
+    activeMatches.delete(finishedId);
+    console.log(`[Match] ${finishedId} cleaned up.`);
+  });
   activeMatches.set(matchId, match);
 };
 
