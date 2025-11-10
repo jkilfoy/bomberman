@@ -1,14 +1,13 @@
 import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
-import { GameEngine, GameEngineOptions } from '../src/game/GameEngine';
-import { GameMode } from '../src/core/GameConfig';
-import { PlayerInputMessage, GameUpdateMessage } from '../src/game/net/types';
+import { LobbyManager, LobbyEntry } from './lobby/LobbyManager';
 
 const PORT = Number(process.env.PORT) || 4000;
-const TICK_INTERVAL = 1000 / 60;
 
 const app = express();
+app.use(express.json());
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -16,60 +15,44 @@ const io = new Server(server, {
   },
 });
 
-const gameOptions: GameEngineOptions = {
-  config: {
-    mode: GameMode.arena,
-    gridWidth: 13,
-    gridHeight: 11,
-    cellSize: 64,
-    tickIntervalMs: TICK_INTERVAL,
-  },
+const startStubMatch = (players: LobbyEntry[]) => {
+  const matchId = `match-${Date.now()}`;
+  console.log(`[Match] Starting stub ${matchId} with: ${players.map((p) => p.playerId).join(', ')}`);
+  players.forEach((entry) => {
+    entry.socket?.emit('match:start', { matchId, playerId: entry.playerId });
+  });
 };
 
-const engine = new GameEngine(gameOptions);
-const connectedPlayers = new Map<string, string>(); // socketId -> playerId
+const lobby = new LobbyManager(startStubMatch);
+
+app.post('/lobby/join', (req, res) => {
+  const { playerId, characterKey } = req.body ?? {};
+  if (!playerId || !characterKey) {
+    return res.status(400).json({ error: 'playerId and characterKey are required' });
+  }
+  const position = lobby.enqueue({ playerId, characterKey });
+  res.json({ position });
+});
 
 io.on('connection', (socket) => {
-  const playerId = engine.spawnPlayer({
-    characterKey: 'eric',
-    name: `Player-${socket.id.substring(0, 4)}`,
-    spawn: { col: 0, row: 0 },
-  });
-  connectedPlayers.set(socket.id, playerId);
-
-  const snapshot = engine.getSnapshot();
-  const update: GameUpdateMessage = {
-    tick: snapshot.tick,
-    timestamp: snapshot.timestamp,
-    fullSnapshot: true,
-    snapshot,
-  };
-  socket.emit('game:update', update);
-
-  socket.on('player:input', (message: PlayerInputMessage) => {
-    if (message.playerId !== playerId) return;
-    engine.enqueueInput(message.input);
+  socket.on('lobby:join', (payload: { playerId?: string; characterKey?: string }) => {
+    if (!payload?.playerId || !payload.characterKey) {
+      socket.emit('lobby:error', { error: 'playerId and characterKey required' });
+      return;
+    }
+    const position = lobby.enqueue({
+      socket,
+      socketId: socket.id,
+      playerId: payload.playerId,
+      characterKey: payload.characterKey,
+    });
+    socket.emit('lobby:queued', { position });
   });
 
   socket.on('disconnect', () => {
-    connectedPlayers.delete(socket.id);
-    engine.removePlayer(playerId);
+    lobby.removeBySocket(socket.id);
   });
 });
-
-setInterval(() => {
-  engine.advance();
-  const delta = engine.getSnapshotDelta();
-  if (!delta) return;
-
-  const snapshot = engine.getSnapshot();
-  const update: GameUpdateMessage = {
-    tick: snapshot.tick,
-    timestamp: snapshot.timestamp,
-    delta,
-  };
-  io.emit('game:update', update);
-}, TICK_INTERVAL);
 
 server.listen(PORT, () => {
   console.log(`Game server listening on port ${PORT}`);
