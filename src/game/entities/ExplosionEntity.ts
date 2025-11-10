@@ -13,4 +13,10 @@ export class ExplosionEntity extends BaseEntity<ExplosionSnapshot> {
   isExpired() {
     return this.state.expiresAt <= 0;
   }
+
+  deactivate() {
+    if (this.state.lethal) {
+      this.patchState({ lethal: false });
+    }
+  }
 }

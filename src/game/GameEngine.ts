@@ -38,12 +38,20 @@ export interface GameEngineOptions {
   initialPlayers?: PlayerSpawnOptions[];
 }
 
+const EXPLOSION_DIRECTIONS: GridCoordinate[] = [
+  { col: 0, row: -1 },
+  { col: 0, row: 1 },
+  { col: -1, row: 0 },
+  { col: 1, row: 0 },
+];
+
 export class GameEngine {
   private grid: GridSystem;
   private map: GameMap;
   private readonly tickDuration: number;
   private tick = 0;
   private timestamp = 0;
+  private readonly powerUpDropChance = 0.8;
 
   private players = new EntityManager<PlayerEntity>();
   private bombs = new EntityManager<BombEntity>();
@@ -77,6 +85,8 @@ export class GameEngine {
       powerUps: this.powerUps,
       enemies: this.enemies,
       onBombTriggered: (bomb) => this.detonateBomb(bomb),
+      onObstacleDestroyed: (obstacle) => this.handleObstacleDestruction(obstacle),
+      onPowerupCollected: (powerUp, player) => this.collectPowerup(powerUp, player)
     });
   }
 
@@ -200,21 +210,30 @@ export class GameEngine {
     });
   }
 
-  private spawnExplosion(bomb: BombEntity) {
-    const id = createEntityId('explosion');
+  private spawnExplosions(bomb: BombEntity) {
     const snapshot = bomb.getSnapshot();
-    const explosion: ExplosionSnapshot = {
-      id,
-      kind: 'explosion',
-      gridPosition: { ...snapshot.gridPosition },
-      worldPosition: { ...snapshot.worldPosition },
-      createdAt: this.timestamp,
-      expiresAt: 400,
-      ownerId: snapshot.ownerId,
-      hitbox: this.buildHitbox(0.9),
-    };
+    this.spawnExplosionAt(snapshot.gridPosition, snapshot.ownerId);
 
-    this.explosions.add(new ExplosionEntity({ state: explosion }));
+    EXPLOSION_DIRECTIONS.forEach((offset) => {
+      for (let step = 1; step <= snapshot.explosionRange; step++) {
+        const target: GridCoordinate = {
+          col: snapshot.gridPosition.col + offset.col * step,
+          row: snapshot.gridPosition.row + offset.row * step,
+        };
+
+        if (!this.grid.isValidCell(target)) break;
+        const obstacle = this.getObstacleAtCell(target);
+
+        if (obstacle) {
+          if (obstacle.getSnapshot().destructible) {
+            this.spawnExplosionAt(target, snapshot.ownerId);
+          }
+          break;
+        }
+
+        this.spawnExplosionAt(target, snapshot.ownerId);
+      }
+    });
   }
 
   private cleanupExplosions() {
@@ -317,7 +336,85 @@ export class GameEngine {
     bomb.markDetonated();
     const owner = this.players.get(bomb.getSnapshot().ownerId);
     owner?.onBombDetonated(bomb.id);
-    this.spawnExplosion(bomb);
+    this.spawnExplosions(bomb);
     this.bombs.remove(bomb.id);
   }
+
+  private spawnExplosionAt(gridPosition: GridCoordinate, ownerId: string) {
+    const id = createEntityId('explosion');
+    const worldPosition = this.grid.gridToWorld(gridPosition);
+    const explosion: ExplosionSnapshot = {
+      id,
+      kind: 'explosion',
+      gridPosition: { ...gridPosition },
+      worldPosition,
+      createdAt: this.timestamp,
+      expiresAt: 400,
+      ownerId,
+      hitbox: this.buildHitbox(0.9),
+      lethal: true,
+    };
+
+    this.explosions.add(new ExplosionEntity({ state: explosion }));
+  }
+
+  private getObstacleAtCell(position: GridCoordinate) {
+    return this.obstacles
+      .values()
+      .find((obstacle) => this.sameCell(obstacle.getSnapshot().gridPosition, position));
+  }
+
+  private handleObstacleDestruction(obstacle: ObstacleEntity) {
+    const snapshot = obstacle.getSnapshot();
+    this.maybeSpawnPowerUp(snapshot.gridPosition);
+  }
+
+  private maybeSpawnPowerUp(gridPosition: GridCoordinate) {
+    if (Math.random() > this.powerUpDropChance) {
+      return;
+    }
+
+    const id = createEntityId('powerup');
+    const worldPosition = this.grid.gridToWorld(gridPosition);
+    const snapshot: PowerUpSnapshot = {
+      id,
+      kind: 'powerUp',
+      gridPosition: { ...gridPosition },
+      worldPosition,
+      createdAt: this.timestamp,
+      powerUpType: this.getRandomPowerUpType(),
+      available: true,
+      hitbox: this.buildHitbox(0.5),
+    };
+
+    this.powerUps.add(new PowerUpEntity({ state: snapshot }));
+  }
+
+  private getRandomPowerUpType(): PowerUpSnapshot['powerUpType'] {
+    const types: PowerUpSnapshot['powerUpType'][] = ['speed', 'bomb', 'range', 'shield'];
+    const index = Math.floor(Math.random() * types.length);
+    return types[index];
+  }
+
+  private collectPowerup(powerUp: PowerUpEntity, player: PlayerEntity) {
+    const powerUpState = powerUp.getSnapshot();
+    if (!powerUpState.available) return;
+
+    powerUp.consume();
+
+    switch (powerUpState.powerUpType) {
+      case 'speed':
+        player.applySpeedBoost(5);
+        break;
+      case 'bomb':
+        player.applyBombLimitIncrease(1);
+        break;
+      case 'range':
+        player.applyExplosionRangeIncrease(1);
+        break;
+      case 'shield':
+        player.grantShield();
+        break;
+    }
+  } 
 }

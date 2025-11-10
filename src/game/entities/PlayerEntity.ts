@@ -11,6 +11,8 @@ export class PlayerEntity extends BaseEntity<PlayerSnapshot> {
   private grid: GridSystem;
   private movementIntent: Direction = Direction.NONE;
   private ignoredBombId?: string | undefined;
+  private invincibilityTimer = 0;
+  private readonly invincibilityDuration = 1000;
 
   constructor(props: PlayerEntityProps) {
     super(props);
@@ -58,6 +60,13 @@ export class PlayerEntity extends BaseEntity<PlayerSnapshot> {
   }
 
   update(deltaMs: number) {
+    if (this.invincibilityTimer > 0) {
+      this.invincibilityTimer = Math.max(0, this.invincibilityTimer - deltaMs);
+      if (this.invincibilityTimer === 0 && this.state.status.invincible) {
+        this.updateStatus({ invincible: false });
+      }
+    }
+
     if (!this.state.alive) {
       return;
     }
@@ -91,6 +100,56 @@ export class PlayerEntity extends BaseEntity<PlayerSnapshot> {
     this.patchState({
       worldPosition: clamped,
       gridPosition: this.grid.worldToGrid(clamped),
+    });
+  }
+
+
+  // =======================
+  // Apply Powerups
+  // =======================
+  
+  applySpeedBoost(amount: number) {
+    this.patchState({ speed: this.state.speed + amount });
+  }
+
+  applyBombLimitIncrease(amount: number) {
+    this.patchState({ bombLimit: this.state.bombLimit + amount });
+  }
+
+  applyExplosionRangeIncrease(amount: number) {
+    this.patchState({ explosionRange: this.state.explosionRange + amount });
+  }
+
+  public grantShield() {
+    if (this.state.status.shielded) return;
+    this.updateStatus({ shielded: true });
+  }
+
+  applyDamage(): boolean {
+    if (!this.state.alive) return false;
+    if (this.state.status.invincible) return false;
+
+    if (this.state.status.shielded) {
+      this.consumeShield();
+      return false;
+    }
+
+    this.setAlive(false);
+    return true;
+  }
+
+  private consumeShield() {
+    this.updateStatus({ shielded: false });
+    this.invincibilityTimer = this.invincibilityDuration;
+    this.updateStatus({ invincible: true });
+  }
+
+  private updateStatus(partial: Partial<PlayerSnapshot['status']>) {
+    this.patchState({
+      status: {
+        ...this.state.status,
+        ...partial,
+      },
     });
   }
 }

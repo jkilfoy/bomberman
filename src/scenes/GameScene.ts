@@ -9,6 +9,7 @@ import KeyboardController from '../input/KeyboardController';
 import { GameMode, GameConfig } from '../core/GameConfig';
 import { GridSystem } from '../core/GridSystem';
 import { GameStateSnapshot } from '../game/state/GameState';
+import { getPowerUpDefinition } from '../game/powerups/definitions';
 
 type RenderCollection<T extends Phaser.GameObjects.GameObject> = Map<string, T>;
 
@@ -24,6 +25,9 @@ export default class GameScene extends Phaser.Scene {
   private bombSprites: RenderCollection<Phaser.GameObjects.Arc> = new Map();
   private obstacleSprites: RenderCollection<Phaser.GameObjects.Rectangle> = new Map();
   private explosionSprites: RenderCollection<Phaser.GameObjects.Rectangle> = new Map();
+  private powerUpSprites: RenderCollection<Phaser.GameObjects.Arc> = new Map();
+  private shieldSprites: RenderCollection<Phaser.GameObjects.Arc> = new Map();
+  private invincibilityTweens = new Map<string, Phaser.Tweens.Tween>();
 
   constructor() {
     super('GameScene');
@@ -99,6 +103,7 @@ export default class GameScene extends Phaser.Scene {
     this.syncPlayers(snapshot);
     this.syncBombs(snapshot);
     this.syncExplosions(snapshot);
+    this.syncPowerUps(snapshot);
   }
 
   private syncPlayers(snapshot: GameStateSnapshot) {
@@ -110,10 +115,20 @@ export default class GameScene extends Phaser.Scene {
         this.playerSprites.set(player.id, sprite);
       }
       sprite.setPosition(player.worldPosition.x, player.worldPosition.y);
-      sprite.setAlpha(player.alive ? 1 : 0.3);
+
+      const baseAlpha = player.alive ? 1 : 0.3;
+      if (player.status.invincible) {
+        this.ensureInvincibilityTween(player.id, sprite, baseAlpha);
+      } else {
+        this.stopInvincibilityTween(player.id, sprite, baseAlpha);
+        sprite.setAlpha(baseAlpha);
+      }
+
+      this.syncShieldSprite(player, sprite);
     });
 
     this.pruneSprites(this.playerSprites, snapshot.players);
+    this.cleanupPlayerAttachments(snapshot.players);
   }
 
   private syncBombs(snapshot: GameStateSnapshot) {
@@ -156,7 +171,7 @@ export default class GameScene extends Phaser.Scene {
           explosion.worldPosition.y,
           this.config.cellSize * 0.9,
           this.config.cellSize * 0.9,
-          0xffaa00,
+          0xff4444,
         );
         sprite.setAlpha(0.7);
         this.explosionSprites.set(explosion.id, sprite);
@@ -165,6 +180,60 @@ export default class GameScene extends Phaser.Scene {
     });
 
     this.pruneSprites(this.explosionSprites, snapshot.explosions);
+  }
+
+  private syncPowerUps(snapshot: GameStateSnapshot) {
+    Object.values(snapshot.powerUps).forEach((powerUp) => {
+      const definition = getPowerUpDefinition(powerUp.powerUpType);
+      if (!powerUp.available) {
+        const existing = this.powerUpSprites.get(powerUp.id);
+        if (existing) {
+          existing.destroy();
+          this.powerUpSprites.delete(powerUp.id);
+          this.showPowerUpPopup(powerUp.worldPosition.x, powerUp.worldPosition.y, definition.label, definition.color);
+        }
+        return;
+      }
+
+      let sprite = this.powerUpSprites.get(powerUp.id);
+      if (!sprite) {
+        sprite = this.add.circle(
+          powerUp.worldPosition.x,
+          powerUp.worldPosition.y,
+          this.config.cellSize * 0.25,
+          definition.color,
+        );
+        this.powerUpSprites.set(powerUp.id, sprite);
+      }
+      sprite.setPosition(powerUp.worldPosition.x, powerUp.worldPosition.y);
+    });
+
+    const availableRecord: Record<string, GameStateSnapshot['powerUps'][string]> = {};
+    Object.entries(snapshot.powerUps).forEach(([id, powerUp]) => {
+      if (powerUp.available) {
+        availableRecord[id] = powerUp;
+      }
+    });
+    this.pruneSprites(this.powerUpSprites, availableRecord);
+  }
+
+  private showPowerUpPopup(x: number, y: number, label: string, color: number) {
+    const text = this.add.text(x, y - this.config.cellSize * 0.4, label, {
+      fontSize: '20px',
+      color: Phaser.Display.Color.IntegerToColor(color).rgba,
+      fontStyle: 'bold',
+    });
+    text.setOrigin(0.5);
+
+    this.tweens.add({
+      targets: text,
+      y: text.y - this.config.cellSize * 0.5,
+      alpha: 0,
+      duration: 1200,
+      delay: 200,
+      ease: 'Quadratic.easeOut',
+      onComplete: () => text.destroy(),
+    });
   }
 
   private pruneSprites(collection: RenderCollection<Phaser.GameObjects.GameObject>, stateRecord: Record<string, unknown>) {
@@ -191,5 +260,65 @@ export default class GameScene extends Phaser.Scene {
     }
 
     g.strokePath();
+  }
+
+  private syncShieldSprite(player: GameStateSnapshot['players'][string], sprite: Phaser.GameObjects.Image) {
+    const radius = this.config.cellSize * 0.4;
+    if (player.status.shielded) {
+      let shield = this.shieldSprites.get(player.id);
+      if (!shield) {
+        shield = this.add.circle(player.worldPosition.x, player.worldPosition.y, radius, 0x66ff00, 0.25);
+        shield.setStrokeStyle(2, 0x99ff99, 0.6);
+        this.shieldSprites.set(player.id, shield);
+      }
+      shield.setPosition(player.worldPosition.x, player.worldPosition.y);
+      shield.setDepth(sprite.depth + 1);
+    } else {
+      this.destroyShieldSprite(player.id);
+    }
+  }
+
+  private destroyShieldSprite(playerId: string) {
+    const shield = this.shieldSprites.get(playerId);
+    shield?.destroy();
+    this.shieldSprites.delete(playerId);
+  }
+
+  private ensureInvincibilityTween(playerId: string, sprite: Phaser.GameObjects.Image, baseAlpha: number) {
+    if (this.invincibilityTweens.has(playerId)) return;
+    sprite.setAlpha(baseAlpha);
+    const tween = this.tweens.add({
+      targets: sprite,
+      alpha: { from: baseAlpha, to: 0.2 },
+      duration: 300,
+      yoyo: true,
+      repeat: -1,
+    });
+    this.invincibilityTweens.set(playerId, tween);
+  }
+
+  private stopInvincibilityTween(playerId: string, sprite?: Phaser.GameObjects.Image, baseAlpha = 1) {
+    const tween = this.invincibilityTweens.get(playerId);
+    if (tween) {
+      tween.stop();
+      this.invincibilityTweens.delete(playerId);
+    }
+    if (sprite) {
+      sprite.setAlpha(baseAlpha);
+    }
+  }
+
+  private cleanupPlayerAttachments(players: Record<string, GameStateSnapshot['players'][string]>) {
+    Array.from(this.shieldSprites.keys()).forEach((id) => {
+      if (!players[id]) {
+        this.destroyShieldSprite(id);
+      }
+    });
+
+    Array.from(this.invincibilityTweens.keys()).forEach((id) => {
+      if (!players[id]) {
+        this.stopInvincibilityTween(id);
+      }
+    });
   }
 }

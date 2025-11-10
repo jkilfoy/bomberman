@@ -7,6 +7,7 @@ import { PlayerEntity } from '../entities/PlayerEntity';
 import { PowerUpEntity } from '../entities/PowerUpEntity';
 import { rectFromState, rectsIntersect, Rectangle, getNearestNonIntersectingPosition } from '../utils/collision';
 
+/** Collision Dependencies */
 interface CollisionDeps {
   players: EntityManager<PlayerEntity>;
   bombs: EntityManager<BombEntity>;
@@ -15,6 +16,8 @@ interface CollisionDeps {
   powerUps: EntityManager<PowerUpEntity>;
   enemies: EntityManager<EnemyEntity>;
   onBombTriggered(bomb: BombEntity): void;
+  onObstacleDestroyed(obstacle: ObstacleEntity): void;
+  onPowerupCollected(powerUp: PowerUpEntity, player: PlayerEntity): void;
 }
 
 export class CollisionSystem {
@@ -94,7 +97,7 @@ export class CollisionSystem {
       players.forEach(({ player, rect }) => {
         if (!player.getSnapshot().alive) return;
         if (!rectsIntersect(rect, powerRect)) return;
-        powerUp.consume();
+        this.deps.onPowerupCollected(powerUp, player);
         // TODO: Apply the actual power-up effects to the player entity.
       });
     });
@@ -120,12 +123,14 @@ export class CollisionSystem {
     }));
 
     explosions.forEach((explosion) => {
-      const rect = rectFromState(explosion.getSnapshot().worldPosition, explosion.getSnapshot().hitbox);
+      const state = explosion.getSnapshot();
+      if (!state.lethal) return;
+      const rect = rectFromState(state.worldPosition, state.hitbox);
 
       players.forEach(({ player, rect: playerRect }) => {
         if (!player.getSnapshot().alive) return;
         if (rectsIntersect(rect, playerRect)) {
-          player.setAlive(false);
+          player.applyDamage();
         }
       });
 
@@ -140,10 +145,12 @@ export class CollisionSystem {
         if (!obstacle.getSnapshot().destructible) return;
         if (rectsIntersect(rect, obstacleRect)) {
           this.deps.obstacles.remove(obstacle.id);
+          this.deps.onObstacleDestroyed(obstacle);
         }
       });
 
       this.chainReactingBombs(rect);
+      explosion.deactivate();
     });
   }
 

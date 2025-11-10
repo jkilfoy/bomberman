@@ -50,6 +50,7 @@ export interface ExplosionSnapshot extends EntitySnapshot {
   kind: 'explosion';
   expiresAt: number;
   ownerId: string;
+  lethal: boolean;
 }
 
 export interface ObstacleSnapshot extends EntitySnapshot {
