@@ -2,6 +2,7 @@ import { Character } from '../characters/Characters';
 import characters from '../characters/Characters';
 import { GameInterface } from '../game/GameInterface';
 import { LocalGameInterface } from '../game/interfaces/LocalGameInterface';
+import { ServerBackedGameInterface } from '../game/interfaces/ServerBackedGameInterface';
 import { GameEngineOptions } from '../game/GameEngine';
 import { PlayerInput } from '../game/state/PlayerInput';
 import { Direction } from '../game/utils/direction';
@@ -19,6 +20,10 @@ export default class GameScene extends Phaser.Scene {
   private interface!: GameInterface;
   private grid!: GridSystem;
   private localPlayerId = 'player-local';
+  private useServer = false;
+  private debugText?: Phaser.GameObjects.Text;
+  private lastPing = 0;
+  private lastUpdateTick = 0;
   private selectedCharacter!: Character;
 
   private playerSprites: RenderCollection<Phaser.GameObjects.Image> = new Map();
@@ -33,7 +38,7 @@ export default class GameScene extends Phaser.Scene {
     super('GameScene');
   }
 
-  init(data: { selectedCharacter?: Character; mode?: GameMode }) {
+  init(data: { selectedCharacter?: Character; mode?: GameMode; networked?: boolean }) {
     this.selectedCharacter = data?.selectedCharacter ?? characters['eric'];
     this.config = {
       mode: data?.mode ?? GameMode.practise,
@@ -42,6 +47,7 @@ export default class GameScene extends Phaser.Scene {
       cellSize: 64,
       tickIntervalMs: 1000 / 60,
     };
+    this.useServer = Boolean(data?.networked);
   }
 
   preload() {
@@ -67,9 +73,19 @@ export default class GameScene extends Phaser.Scene {
       ],
     };
 
-    this.interface = new LocalGameInterface(engineOptions);
+    this.interface = this.useServer
+      ? new ServerBackedGameInterface({
+          socketUrl: 'http://localhost:4000',
+          playerId: this.localPlayerId,
+          engineOptions,
+        })
+      : new LocalGameInterface(engineOptions);
 
     this.drawGrid();
+    this.debugText = this.add.text(10, 10, '', {
+      fontSize: '14px',
+      color: '#00ff00',
+    }).setDepth(1000);
   }
 
   update(time: number, delta: number) {
@@ -104,6 +120,7 @@ export default class GameScene extends Phaser.Scene {
     this.syncBombs(snapshot);
     this.syncExplosions(snapshot);
     this.syncPowerUps(snapshot);
+    this.updateDebugInfo(snapshot);
   }
 
   private syncPlayers(snapshot: GameStateSnapshot) {
@@ -260,6 +277,23 @@ export default class GameScene extends Phaser.Scene {
     }
 
     g.strokePath();
+  }
+
+  private updateDebugInfo(snapshot: GameStateSnapshot) {
+    if (!this.debugText) return;
+    this.lastUpdateTick = snapshot.tick;
+    const ping = this.useServer ? (window.performance?.now() ?? 0) - snapshot.timestamp : undefined;
+    const predictionSize = (this.interface as any).predictionBuffer?.length ?? 0;
+    const lines = [
+      `Tick: ${snapshot.tick}`,
+      `Mode: ${this.useServer ? 'Networked' : 'Local'}`,
+    ];
+    if (this.useServer) {
+      const clampedPing = ping != null ? Math.max(0, Math.round(ping)) : 'N/A';
+      lines.push(`Ping(ms): ${clampedPing}`);
+      lines.push(`Predicted Inputs: ${predictionSize}`);
+    }
+    this.debugText.setText(lines);
   }
 
   private syncShieldSprite(player: GameStateSnapshot['players'][string], sprite: Phaser.GameObjects.Image) {

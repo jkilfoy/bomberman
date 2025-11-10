@@ -48,7 +48,7 @@ export default class MenuScene extends Phaser.Scene {
             x += 120 // spacing between icons
         })
 
-        // Start Game button
+        // Start Game button (networked arena)
         const startButtonStyle: Phaser.Types.GameObjects.Text.TextStyle = {
             color: '#00ff00',
             backgroundColor: '#134475ff',
@@ -62,7 +62,8 @@ export default class MenuScene extends Phaser.Scene {
         startGameButton.on('pointerup', () => {
             this.scene.start('GameScene', { 
                 selectedCharacter: this.selectedCharacter,
-                mode: GameMode.arena
+                mode: GameMode.arena,
+                networked: true
             })
         });
 
@@ -90,7 +91,8 @@ export default class MenuScene extends Phaser.Scene {
         practiseButton.on('pointerup', () => {
             this.scene.start('GameScene', { 
                 selectedCharacter: this.selectedCharacter,
-                mode: GameMode.practise
+                mode: GameMode.practise,
+                networked: false
             })
         });
 
