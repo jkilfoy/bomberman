@@ -3,6 +3,8 @@ import http from 'http';
 import { Server } from 'socket.io';
 import { LobbyManager, LobbyEntry } from './lobby/LobbyManager';
 import { Match } from './match/Match';
+import { getSpawnForIndex } from './match/spawnPositions';
+import type { MatchPlayerInfo } from './match/types';
 
 const PORT = Number(process.env.PORT) || 4000;
 
@@ -26,8 +28,14 @@ const startMatch = (players: LobbyEntry[]) => {
   matchCounter += 1;
   const matchId = `match-${matchCounter}`;
   console.log(`[Match] Starting ${matchId} with: ${players.map((p) => p.playerId).join(', ')}`);
-  players.forEach((entry) => entry.socket?.emit('match:start', { matchId, playerId: entry.playerId }));
-  const match = new Match(io, matchId, players, (finishedId) => {
+  const roster: MatchPlayerInfo[] = players.map((entry, idx) => ({
+    playerId: entry.playerId,
+    characterKey: entry.characterKey,
+    name: entry.playerId,
+    spawn: getSpawnForIndex(idx),
+  }));
+  players.forEach((entry) => entry.socket?.emit('match:start', { matchId, playerId: entry.playerId, roster }));
+  const match = new Match(io, matchId, players, roster, (finishedId) => {
     activeMatches.delete(finishedId);
     console.log(`[Match] ${finishedId} cleaned up.`);
   });

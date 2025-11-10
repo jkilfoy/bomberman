@@ -4,6 +4,8 @@ import { GameMode } from '../../src/core/GameConfig';
 import type { LobbyEntry } from '../lobby/LobbyManager';
 import { PlayerInputMessage, GameUpdateMessage } from '../../src/game/net/types';
 import { GameStateSnapshot } from '../../src/game/state/GameState';
+import { getSpawnForIndex } from './spawnPositions';
+import type { MatchPlayerInfo } from './types';
 
 const MATCH_TICK_INTERVAL = 1000 / 60;
 const MATCH_DURATION_MS = 2 * 60 * 1000;
@@ -26,15 +28,16 @@ export class Match {
     private readonly io: Server,
     private readonly id: string,
     private readonly players: LobbyEntry[],
+    private readonly roster: MatchPlayerInfo[],
     private readonly onEnded?: (matchId: string) => void,
   ) {
-    this.engine = new GameEngine(this.buildOptions(players));
+    this.engine = new GameEngine(this.buildOptions());
     this.attachSockets();
     this.sendInitialSnapshot();
     this.startTickLoop();
   }
 
-  private buildOptions(players: LobbyEntry[]): GameEngineOptions {
+  private buildOptions(): GameEngineOptions {
     return {
       config: {
         mode: GameMode.arena,
@@ -43,11 +46,11 @@ export class Match {
         cellSize: 64,
         tickIntervalMs: MATCH_TICK_INTERVAL,
       },
-      initialPlayers: players.map((entry, idx) => ({
-        id: entry.playerId,
-        characterKey: entry.characterKey,
-        name: entry.playerId,
-        spawn: { col: idx % 2 === 0 ? 0 : 12, row: idx < 2 ? 0 : 10 },   // todo : move magic logic
+      initialPlayers: this.roster.map((player) => ({
+        id: player.playerId,
+        characterKey: player.characterKey,
+        name: player.name,
+        spawn: player.spawn,
       })),
     };
   }

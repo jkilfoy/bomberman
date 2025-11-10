@@ -1,7 +1,15 @@
 import characters from "../characters/Characters"
 import { Character } from "../characters/Characters"
 import { GameMode } from "../core/GameConfig"
+import { GridCoordinate } from '../core/GridSystem'
 import { io, Socket } from 'socket.io-client'
+
+interface NetworkRosterEntry {
+    playerId: string
+    characterKey: string
+    spawn: GridCoordinate
+    name?: string
+}
 
 export default class MenuScene extends Phaser.Scene {
 
@@ -140,7 +148,7 @@ export default class MenuScene extends Phaser.Scene {
         this.lobbySocket.on('lobby:error', ({ error }) => {
             this.showWaiting(`Lobby error: ${error}`)
         })
-        this.lobbySocket.on('match:start', ({ matchId, playerId }) => {
+        this.lobbySocket.on('match:start', ({ matchId, playerId, roster }) => {
             if (!this.queuedPlayerId) {
                 this.queuedPlayerId = playerId
             }
@@ -153,6 +161,7 @@ export default class MenuScene extends Phaser.Scene {
                 playerId,
                 matchId,
                 socket: this.lobbySocket,
+                roster,
             })
         })
     }

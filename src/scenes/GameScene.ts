@@ -5,6 +5,14 @@ import { LocalGameInterface } from '../game/interfaces/LocalGameInterface';
 import { ServerBackedGameInterface } from '../game/interfaces/ServerBackedGameInterface';
 import { GameEngineOptions } from '../game/GameEngine';
 import type { Socket } from 'socket.io-client';
+import { GridCoordinate } from '../core/GridSystem';
+
+interface NetworkRosterEntry {
+  playerId: string;
+  characterKey: string;
+  spawn: GridCoordinate;
+  name?: string;
+}
 import { PlayerInput } from '../game/state/PlayerInput';
 import { Direction } from '../game/utils/direction';
 import KeyboardController from '../input/KeyboardController';
@@ -29,6 +37,8 @@ export default class GameScene extends Phaser.Scene {
   private matchId: string | undefined;
   private networkSocket: Socket | undefined;
   private matchConcluded = false;
+  private matchOverlay?: Phaser.GameObjects.Text;
+  private networkRoster: NetworkRosterEntry[] | undefined;
 
   private playerSprites: RenderCollection<Phaser.GameObjects.Image> = new Map();
   private bombSprites: RenderCollection<Phaser.GameObjects.Arc> = new Map();
@@ -42,7 +52,7 @@ export default class GameScene extends Phaser.Scene {
     super('GameScene');
   }
 
-  init(data: { selectedCharacter?: Character; mode?: GameMode; networked?: boolean; playerId?: string; matchId?: string; socket?: Socket } = {}) {
+  init(data: { selectedCharacter?: Character; mode?: GameMode; networked?: boolean; playerId?: string; matchId?: string; socket?: Socket; roster?: NetworkRosterEntry[] } = {}) {
     this.selectedCharacter = data?.selectedCharacter ?? characters['eric'];
     this.config = {
       mode: data?.mode ?? GameMode.practise,
@@ -55,6 +65,13 @@ export default class GameScene extends Phaser.Scene {
     if (data?.playerId) this.localPlayerId = data.playerId;
     this.matchId = data?.matchId;
     this.networkSocket = data?.socket;
+    this.networkRoster = data?.roster;
+    if (this.useServer && this.networkRoster) {
+      const localInfo = this.networkRoster.find((entry) => entry.playerId === this.localPlayerId);
+      if (localInfo) {
+        this.selectedCharacter = characters[localInfo.characterKey] ?? this.selectedCharacter;
+      }
+    }
     this.matchConcluded = false;
   }
 
@@ -68,17 +85,27 @@ export default class GameScene extends Phaser.Scene {
     this.grid = new GridSystem(this.config.gridWidth, this.config.gridHeight, this.config.cellSize);
     this.controller = new KeyboardController(this);
 
+    const initialPlayers = this.networkRoster
+      ? this.networkRoster.map((player) => ({
+          id: player.playerId,
+          characterKey: player.characterKey,
+          name: player.name ?? player.playerId,
+          spawn: player.spawn,
+          speed: 220,
+        }))
+      : [
+          {
+            id: this.localPlayerId,
+            characterKey: this.selectedCharacter.key,
+            name: this.selectedCharacter.name,
+            spawn: { col: 0, row: 0 },
+            speed: 220,
+          },
+        ];
+
     const engineOptions: GameEngineOptions = {
       config: this.config,
-      initialPlayers: [
-        {
-          id: this.localPlayerId,
-          characterKey: this.selectedCharacter.key,
-          name: this.selectedCharacter.name,
-          spawn: { col: 0, row: 0 },
-          speed: 220,
-        },
-      ],
+      initialPlayers,
     };
 
     if (this.useServer) {
@@ -101,7 +128,7 @@ export default class GameScene extends Phaser.Scene {
       color: '#00ff00',
     }).setDepth(1000);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      (this.interface as any)?.destroy?.();
+      this.cleanupNetwork();
     });
   }
 
@@ -376,8 +403,28 @@ export default class GameScene extends Phaser.Scene {
   private handleMatchEnd(payload: { matchId: string; reason: string }) {
     if (this.matchConcluded) return;
     this.matchConcluded = true;
-    this.time.delayedCall(1000, () => {
+    this.showMatchOverlay(`Match ended: ${payload.reason}`);
+    this.time.delayedCall(2000, () => {
       this.scene.start('MenuScene', { resultMessage: `Match ended: ${payload.reason}` });
     });
+  }
+
+  private showMatchOverlay(message: string) {
+    if (!this.matchOverlay) {
+      this.matchOverlay = this.add.text(this.scale.width / 2, this.scale.height / 2, message, {
+        fontSize: '32px',
+        color: '#ffdd55',
+        backgroundColor: '#000000aa',
+        padding: { left: 20, right: 20, top: 10, bottom: 10 },
+      }).setOrigin(0.5).setDepth(2000);
+    } else {
+      this.matchOverlay.setText(message);
+      this.matchOverlay.setVisible(true);
+    }
+  }
+
+  private cleanupNetwork() {
+    (this.interface as any)?.destroy?.();
+    this.networkSocket?.disconnect();
   }
 }
