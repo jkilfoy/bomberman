@@ -50,6 +50,7 @@ const EXPLOSION_DIRECTIONS: GridCoordinate[] = [
 ];
 
 export class GameEngine {
+  private readonly options: GameEngineOptions;
   private grid: GridSystem;
   private map: GameMap;
   private readonly tickDuration: number;
@@ -69,7 +70,8 @@ export class GameEngine {
   private inputQueue: PlayerInput[] = [];
   private collisionSystem: CollisionSystem;
 
-  constructor(private readonly options: GameEngineOptions) {
+  constructor(options: GameEngineOptions) {
+    this.options = options;
     const tickInterval = options.config.tickIntervalMs ?? DEFAULT_TICK_INTERVAL;
     this.tickDuration = tickInterval;
     this.grid = new GridSystem(
@@ -98,6 +100,12 @@ export class GameEngine {
 
   enqueueInput(input: PlayerInput) {
     this.inputQueue.push(input);
+  }
+
+  removePlayer(playerId: string) {
+    if (!this.players.get(playerId)) return;
+    this.players.remove(playerId);
+    this.currentSnapshot = null;
   }
 
   spawnPlayer(options: PlayerSpawnOptions) {

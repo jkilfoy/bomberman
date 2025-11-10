@@ -2,12 +2,15 @@
   "name": "bomberman",
   "private": true,
   "version": "0.0.0",
-  "type": "module",
+  "type": "commonjs",
   "scripts": {
     "dev": "ts-node src/index.ts",
     "vite": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "build": "tsc -p tsconfig.build.json && vite build",
+    "preview": "vite preview",
+    "server:build": "tsc -p tsconfig.build.json",
+    "server:start": "node dist/server/index.js",
+    "server": "npm run server:build && npm run server:start"
   },
   "devDependencies": {
     "@types/express": "^5.0.5",

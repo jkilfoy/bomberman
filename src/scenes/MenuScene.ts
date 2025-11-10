@@ -20,9 +20,18 @@ export default class MenuScene extends Phaser.Scene {
     }
 
     create() {
-        this.add.text(100, 80, 'Welcome to BOMBERMAN', { fontSize: 24, fill: '#fff' })
+        const headingStyle: Phaser.Types.GameObjects.Text.TextStyle = {
+            fontSize: '24px',
+            color: '#ffffff'
+        }
+        const subHeadingStyle: Phaser.Types.GameObjects.Text.TextStyle = {
+            fontSize: '20px',
+            color: '#cccccc'
+        }
 
-        this.add.text(100, 130, 'Select Your Character:', { fontSize: 20, fill: '#ccc' })
+        this.add.text(100, 80, 'Welcome to BOMBERMAN', headingStyle)
+
+        this.add.text(100, 130, 'Select Your Character:', subHeadingStyle)
 
         // Character selection area
         let x = 160
@@ -40,10 +49,13 @@ export default class MenuScene extends Phaser.Scene {
         })
 
         // Start Game button
-        let startGameButton = this.add.text(100, 350, 'Start Game!', {
-            fill: '#0f0',
+        const startButtonStyle: Phaser.Types.GameObjects.Text.TextStyle = {
+            color: '#00ff00',
             backgroundColor: '#134475ff',
-            padding: 10 });
+            padding: { left: 10, right: 10, top: 10, bottom: 10 }
+        }
+
+        let startGameButton = this.add.text(100, 350, 'Start Game!', startButtonStyle);
 
         startGameButton.setInteractive({ useHandCursor: true });
 
@@ -65,10 +77,13 @@ export default class MenuScene extends Phaser.Scene {
 
 
         // Practise mode button
-        let practiseButton = this.add.text(100, 415, 'Practise Mode', {
-            fill: '#0f0',
+        const practiseButtonStyle: Phaser.Types.GameObjects.Text.TextStyle = {
+            color: '#00ff00',
             backgroundColor: '#751313ff',
-            padding: 10 });
+            padding: { left: 10, right: 10, top: 10, bottom: 10 }
+        }
+
+        let practiseButton = this.add.text(100, 415, 'Practise Mode', practiseButtonStyle);
 
         practiseButton.setInteractive({ useHandCursor: true });
 
@@ -93,7 +108,7 @@ export default class MenuScene extends Phaser.Scene {
 
     }
 
-    selectCharacter(char) {
+    selectCharacter(char: Character | null) {
         this.selectedCharacter = char
         this.updateCharacterHighlight()
     }
