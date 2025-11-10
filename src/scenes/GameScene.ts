@@ -1,195 +1,195 @@
-import { BombManager } from "../bombs/BombManager"
-import characters, { Character } from "../characters/Characters"
-import { CollisionManager } from "../collision/CollisionManager"
-import { GameEvents } from "../core/EventManager"
-import { GameConfig } from "../core/GameConfig"
-import { GameContext } from "../core/GameContext"
-import { GridSystem } from "../core/GridSystem"
-import { TextService } from "../core/TextService"
-import { EnemyManager } from "../enemies/EnemyManager"
-import ExplosionManager from "../explosions/ExplosionManager"
-import KeyboardController from "../input/KeyboardController"
-import { BasicMap } from "../map/BasicMap"
-import { Map } from "../map/Map"
-import { ObstacleManager } from "../obstacle/ObstacleManager"
-import { PlayerManager } from "../player/PlayerManager"
-import { PowerUpManager } from "../powerups/PowerUpManager"
+import { Character } from '../characters/Characters';
+import characters from '../characters/Characters';
+import { GameInterface } from '../game/GameInterface';
+import { LocalGameInterface } from '../game/interfaces/LocalGameInterface';
+import { GameEngineOptions } from '../game/GameEngine';
+import { PlayerInput } from '../game/state/PlayerInput';
+import { Direction } from '../game/utils/direction';
+import KeyboardController from '../input/KeyboardController';
+import { GameMode, GameConfig } from '../core/GameConfig';
+import { GridSystem } from '../core/GridSystem';
+import { GameStateSnapshot } from '../game/state/GameState';
 
-type PositionedGameObject = Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image | Phaser.GameObjects.Arc
+type RenderCollection<T extends Phaser.GameObjects.GameObject> = Map<string, T>;
 
 export default class GameScene extends Phaser.Scene {
+  private config!: GameConfig;
+  private controller!: KeyboardController;
+  private interface!: GameInterface;
+  private grid!: GridSystem;
+  private localPlayerId = 'player-local';
+  private selectedCharacter!: Character;
 
-  // Game Config
-  public config!: GameConfig
-  public context!: GameContext
-  public selectedCharacter!: Character
-  public mode: string = 'practise'
+  private playerSprites: RenderCollection<Phaser.GameObjects.Image> = new Map();
+  private bombSprites: RenderCollection<Phaser.GameObjects.Arc> = new Map();
+  private obstacleSprites: RenderCollection<Phaser.GameObjects.Rectangle> = new Map();
+  private explosionSprites: RenderCollection<Phaser.GameObjects.Rectangle> = new Map();
 
-  // Grid configuration
-  public cellSize = 64
-  public walls!: {left: number, right: number, top: number, bottom: number}
-  public map!: Map
-
-  // Obstacles 
-  public obstacleManager!: ObstacleManager
-
-  // Bombs 
-  public bombManager!: BombManager
-  public explosionManager!: ExplosionManager
-  public bombTimerDuration = 3000 // milliseconds before explosion
-  public fireDuration = 500        // fire lifetime in ms
-
-  // Powerups
-  public powerupManager!: PowerUpManager
-  public powerups = []
-  public baseSpeed = 200
-  public speedIncrease = 1.2
-  public powerupChance = 0.8
-
-  // Enemies
-  public enemyManager!: EnemyManager
-
-  // Player
-  public playerManager!: PlayerManager
-
-  // Collisions
-  public collisionManager!: CollisionManager
-
-  // Text Service
-  public textService!: TextService
-
-
-
-    constructor() {
-      super('GameScene')
-    }
-
-
-    init(data) {
-      if (data && data.selectedCharacter) {
-        this.selectedCharacter = data.selectedCharacter
-      } else {
-        this.selectedCharacter = characters['eric'] // default to Eric
-      }
-      
-      this.config = {
-        mode: data.mode
-      }
-    }
-
-  
-    preload() {
-      Object.values(characters).forEach(char => {
-            this.load.image(char.key, char.path)
-        })
-      this.load.image('cone',  'src/assets/traffic_cone.png')
-    }
-  
-    create() {
-
-      // Create game context to pass to managers/entities
-      this.context = new GameContext(this.config, this, GameEvents, new GridSystem(13, 11, 64));
-
-      // Make map
-      this.map = new BasicMap(this.context.grid.height, this.context.grid.width) 
-
-      // Draw grid
-      this.drawGrid()
-
-
-      //-------------------------------
-      // Create and register managers
-      //-------------------------------
-
-      // Obstacles
-      this.obstacleManager = new ObstacleManager(this.context)
-      this.obstacleManager.initializeObstacles(this.map)
-      this.context.obstacleManager = this.obstacleManager
-      
-
-      // Players
-      const controller = new KeyboardController(this)
-
-      this.playerManager = new PlayerManager(this.context)
-      this.context.playerManager = this.playerManager
-
-      this.playerManager.spawn({col: 0, row: 0}, this.selectedCharacter, controller)
-      
-      // Enemies
-      this.enemyManager = new EnemyManager(this.context)
-      this.context.enemyManager = this.enemyManager
-      this.enemyManager.spawn({col: this.context.grid.width - 1, row: 0})
-
-
-      // Bombs && Explosions
-      this.bombManager = new BombManager(this.context)
-      this.context.bombManager = this.bombManager
-
-      this.explosionManager = new ExplosionManager(this.context)
-      this.context.explosionManager = this.explosionManager
-
-      // PowerUps
-      this.powerupManager = new PowerUpManager(this.context)
-      this.context.powerUpManager = this.powerupManager
-
-
-      /// Manager Collisions
-      this.collisionManager = new CollisionManager(this.context)
-
-
-      // Text Service
-      this.textService = new TextService(this.context)
-      this.context.textService = this.textService
-    }
-
-    // --------------------
-    // DRAWING / SETUP
-    // --------------------
-  
-    drawGrid() {
-      const g = this.add.graphics()
-      g.lineStyle(1, 0x555555, 1)
-  
-      // Draw vertical lines
-      for (let x = 0; x <= this.context.grid.width; x++) {
-        g.moveTo(x * this.cellSize, 0)
-        g.lineTo(x * this.cellSize, this.context.grid.height * this.cellSize)
-      }
-  
-      // Draw horizontal lines
-      for (let y = 0; y <= this.context.grid.height; y++) {
-        g.moveTo(0, y * this.cellSize)
-        g.lineTo(this.context.grid.width * this.cellSize, y * this.cellSize)
-      }
-  
-      g.strokePath()
-    }
-
-
-
-    // --------------
-    // UPDATE LOOP
-    // ---------------
-  
-    update(time, delta) {
-
-      // update each manager
-      this.bombManager.update(time, delta)
-      this.playerManager.update(time, delta)
-      this.enemyManager.update(time, delta)
-
-      // process collisions and emit corresponding events
-      this.collisionManager.update({
-        players: this.playerManager.getAll(),
-        enemies: this.enemyManager.getAll(),
-        obstacles: this.obstacleManager.getAll(),
-        powerups: this.powerupManager.getAll(),
-        bombs: this.bombManager.getAll(),
-        activeExplosions: this.explosionManager.getActiveExplosions()
-      })
-
-      // update collisions (they are only active for the frame of their explosion)
-      this.explosionManager.update(time, delta)
-    }
-
+  constructor() {
+    super('GameScene');
   }
+
+  init(data: { selectedCharacter?: Character; mode?: GameMode }) {
+    this.selectedCharacter = data?.selectedCharacter ?? characters['eric'];
+    this.config = {
+      mode: data?.mode ?? GameMode.practise,
+      gridWidth: 13,
+      gridHeight: 11,
+      cellSize: 64,
+      tickIntervalMs: 1000 / 60,
+    };
+  }
+
+  preload() {
+    Object.values(characters).forEach((char) => {
+      this.load.image(char.key, char.path);
+    });
+  }
+
+  create() {
+    this.grid = new GridSystem(this.config.gridWidth, this.config.gridHeight, this.config.cellSize);
+    this.controller = new KeyboardController(this);
+
+    const engineOptions: GameEngineOptions = {
+      config: this.config,
+      initialPlayers: [
+        {
+          id: this.localPlayerId,
+          characterKey: this.selectedCharacter.key,
+          name: this.selectedCharacter.name,
+          spawn: { col: 0, row: 0 },
+          speed: 220,
+        },
+      ],
+    };
+
+    this.interface = new LocalGameInterface(engineOptions);
+
+    this.drawGrid();
+  }
+
+  update(time: number, delta: number) {
+    this.sendInputs(time);
+    this.interface.advance?.(delta);
+    this.syncState();
+  }
+
+  private sendInputs(time: number) {
+    const direction = this.controller.direction.get();
+    const movementInput: PlayerInput = {
+      type: 'set_direction',
+      playerId: this.localPlayerId,
+      direction,
+      clientTime: time,
+    };
+    this.interface.enqueueInput(movementInput);
+
+    if (this.controller.bomb.justPressed()) {
+      this.interface.applyInput({
+        type: 'drop_bomb',
+        playerId: this.localPlayerId,
+        clientTime: time,
+      });
+    }
+  }
+
+  private syncState() {
+    const snapshot = this.interface.getCurrentState();
+    this.syncObstacles(snapshot);
+    this.syncPlayers(snapshot);
+    this.syncBombs(snapshot);
+    this.syncExplosions(snapshot);
+  }
+
+  private syncPlayers(snapshot: GameStateSnapshot) {
+    Object.values(snapshot.players).forEach((player) => {
+      let sprite = this.playerSprites.get(player.id);
+      if (!sprite) {
+        sprite = this.add.image(player.worldPosition.x, player.worldPosition.y, player.characterKey);
+        sprite.setScale(characters[player.characterKey]?.scale ?? 0.4);
+        this.playerSprites.set(player.id, sprite);
+      }
+      sprite.setPosition(player.worldPosition.x, player.worldPosition.y);
+      sprite.setAlpha(player.alive ? 1 : 0.3);
+    });
+
+    this.pruneSprites(this.playerSprites, snapshot.players);
+  }
+
+  private syncBombs(snapshot: GameStateSnapshot) {
+    Object.values(snapshot.bombs).forEach((bomb) => {
+      let sprite = this.bombSprites.get(bomb.id);
+      if (!sprite) {
+        sprite = this.add.circle(bomb.worldPosition.x, bomb.worldPosition.y, this.config.cellSize * 0.3, 0x4444ff);
+        this.bombSprites.set(bomb.id, sprite);
+      }
+      sprite.setPosition(bomb.worldPosition.x, bomb.worldPosition.y);
+    });
+    this.pruneSprites(this.bombSprites, snapshot.bombs);
+  }
+
+  private syncObstacles(snapshot: GameStateSnapshot) {
+    Object.values(snapshot.obstacles).forEach((obstacle) => {
+      let sprite = this.obstacleSprites.get(obstacle.id);
+      if (!sprite) {
+        sprite = this.add.rectangle(
+          obstacle.worldPosition.x,
+          obstacle.worldPosition.y,
+          this.config.cellSize * 0.9,
+          this.config.cellSize * 0.9,
+          obstacle.destructible ? 0xcc8844 : 0x777777,
+        );
+        sprite.setStrokeStyle(2, obstacle.destructible ? 0x553311 : 0x333333);
+        this.obstacleSprites.set(obstacle.id, sprite);
+      }
+    });
+
+    this.pruneSprites(this.obstacleSprites, snapshot.obstacles);
+  }
+
+  private syncExplosions(snapshot: GameStateSnapshot) {
+    Object.values(snapshot.explosions).forEach((explosion) => {
+      let sprite = this.explosionSprites.get(explosion.id);
+      if (!sprite) {
+        sprite = this.add.rectangle(
+          explosion.worldPosition.x,
+          explosion.worldPosition.y,
+          this.config.cellSize * 0.9,
+          this.config.cellSize * 0.9,
+          0xffaa00,
+        );
+        sprite.setAlpha(0.7);
+        this.explosionSprites.set(explosion.id, sprite);
+      }
+      sprite.setPosition(explosion.worldPosition.x, explosion.worldPosition.y);
+    });
+
+    this.pruneSprites(this.explosionSprites, snapshot.explosions);
+  }
+
+  private pruneSprites(collection: RenderCollection<Phaser.GameObjects.GameObject>, stateRecord: Record<string, unknown>) {
+    Array.from(collection.entries()).forEach(([id, sprite]) => {
+      if (!stateRecord[id]) {
+        sprite.destroy();
+        collection.delete(id);
+      }
+    });
+  }
+
+  private drawGrid() {
+    const g = this.add.graphics();
+    g.lineStyle(1, 0x555555, 1);
+
+    for (let x = 0; x <= this.grid.width; x++) {
+      g.moveTo(x * this.config.cellSize, 0);
+      g.lineTo(x * this.config.cellSize, this.grid.height * this.config.cellSize);
+    }
+
+    for (let y = 0; y <= this.grid.height; y++) {
+      g.moveTo(0, y * this.config.cellSize);
+      g.lineTo(this.grid.width * this.config.cellSize, y * this.config.cellSize);
+    }
+
+    g.strokePath();
+  }
+}

@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 import { Controller } from './Controller'
-import { Direction } from '../util/util'
+import { Direction } from '../game/utils/direction'
 
 export default class KeyboardController implements Controller {
   private scene: Phaser.Scene

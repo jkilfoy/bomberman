@@ -1,17 +1,21 @@
 export interface GridCoordinate {
-    col: number
-    row: number
+  col: number;
+  row: number;
 }
 
 export interface WorldCoordinate {
-    x: number
-    y: number
+  x: number;
+  y: number;
+}
+
+export interface BoundingSize {
+  width: number;
+  height: number;
 }
 
 /**
- * This class encapsulates data regarding the grid of the game
- * It also as exposes helper methods to convert between scene x/y coordinates and grid col/row coordinates 
- * 
+ * Utility for converting between grid and world space.
+ * Rendering systems can use this without depending on Phaser specifics.
  */
 export class GridSystem {
   readonly cellSize: number;
@@ -24,8 +28,6 @@ export class GridSystem {
     this.cellSize = cellSize;
   }
 
-  /** Convert grid coordinates (col,row) to world coordinates (x,y) 
-   * Returns the (x,y) coordinate at the center of (col,row) */
   gridToWorld(coords: GridCoordinate): WorldCoordinate {
     return {
       x: coords.col * this.cellSize + this.cellSize / 2,
@@ -33,7 +35,6 @@ export class GridSystem {
     };
   }
 
-  /** Convert world coordinates (x,y) to grid coordinates (col,row) */
   worldToGrid(coords: WorldCoordinate): GridCoordinate {
     return {
       col: Math.floor(coords.x / this.cellSize),
@@ -41,7 +42,6 @@ export class GridSystem {
     };
   }
 
-  /** Whether a grid position is within the playable area */
   isValidCell(coords: GridCoordinate) {
     return (
       coords.col >= 0 &&
@@ -49,5 +49,25 @@ export class GridSystem {
       coords.col < this.width &&
       coords.row < this.height
     );
+  }
+
+  getWorldBounds(size?: BoundingSize) {
+    const halfWidth = size ? size.width / 2 : 0;
+    const halfHeight = size ? size.height / 2 : 0;
+
+    return {
+      minX: halfWidth,
+      maxX: this.width * this.cellSize - halfWidth,
+      minY: halfHeight,
+      maxY: this.height * this.cellSize - halfHeight,
+    };
+  }
+
+  clampWorldPosition(position: WorldCoordinate, size?: BoundingSize): WorldCoordinate {
+    const bounds = this.getWorldBounds(size);
+    return {
+      x: Math.min(Math.max(position.x, bounds.minX), bounds.maxX),
+      y: Math.min(Math.max(position.y, bounds.minY), bounds.maxY),
+    };
   }
 }

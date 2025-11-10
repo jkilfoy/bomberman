@@ -1,52 +1,38 @@
-import { BaseEntity } from "./BaseEntity";
-import { GameContext } from "./GameContext";
+import { BaseEntity } from './BaseEntity';
 
-export abstract class EntityManager<T extends BaseEntity<any>> {
-    protected entities: T[] = [];
+export class EntityManager<T extends BaseEntity<any>> {
+  protected entities = new Map<string, T>();
 
-    constructor(protected context: GameContext) {
-        // console.log(context)
-        this.subscribeToEvents()
-    }
+  add(entity: T) {
+    this.entities.set(entity.id, entity);
+    return entity;
+  }
 
-    /** Spawn and track a new entity */
-    abstract spawn(...args: any[]): T;
+  get(id: string) {
+    return this.entities.get(id);
+  }
 
-    /** Remove and destroy an existing entity */
-    remove(entity: T) {
-        entity.destroy()
-        this.entities = this.entities.filter(e => e !== entity)
-    }
+  remove(id: string) {
+    this.entities.delete(id);
+  }
 
-    /** Override to subscribe to all events this manager should care about */
-    subscribeToEvents() {}
+  values() {
+    return Array.from(this.entities.values());
+  }
 
-    /** Basic update logic: update each entity sequentially */
-    update(time: number, delta: number) {
-        for (const e of this.entities) {
-            e.update(time, delta);
-        }
-    }
+  update(deltaMs: number) {
+    this.entities.forEach((entity) => entity.update(deltaMs));
+  }
 
-    /** Destroy this manager. To be called at the end of Manager's lifecycle.
-     * Be sure to unsubscribe from any events this manager subscribed to */ 
-    destroy() {
-        this.destroyAll()
-    }
+  toRecord<TSnapshot extends { id: string }>() {
+    const record: Record<string, TSnapshot> = {};
+    this.entities.forEach((entity) => {
+      record[entity.id] = entity.getSnapshot() as TSnapshot;
+    });
+    return record;
+  }
 
-    /** Destroys all entities */
-    destroyAll() {
-        for (const e of this.entities) e.destroy();
-        this.entities = [];
-    }
-
-    /** Get all entities (for CollisionManager, etc.) */
-    getAll(): readonly T[] {
-        return this.entities;
-    }
-
-    /** Find any entity matching the criteria */
-    find(pred: (e: T) => boolean): T | undefined {
-        return this.getAll().find(pred)
-    }
+  clear() {
+    this.entities.clear();
+  }
 }

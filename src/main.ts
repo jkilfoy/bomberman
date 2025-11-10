@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
-import GameScene from './scenes/GameScene.js'
-import MenuScene from './scenes/MenuScene.js'
+import GameScene from './scenes/GameScene'
+import MenuScene from './scenes/MenuScene'
 
 const config = {
   type: Phaser.AUTO,

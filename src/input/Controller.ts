@@ -1,4 +1,4 @@
-import { Direction } from "../util/util"
+import { Direction } from "../game/utils/direction"
 
 export interface Controller {
   left: { isDown(): boolean }
