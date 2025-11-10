@@ -2,6 +2,7 @@ import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
 import { LobbyManager, LobbyEntry } from './lobby/LobbyManager';
+import { Match } from './match/Match';
 
 const PORT = Number(process.env.PORT) || 4000;
 
@@ -15,15 +16,19 @@ const io = new Server(server, {
   },
 });
 
-const startStubMatch = (players: LobbyEntry[]) => {
-  const matchId = `match-${Date.now()}`;
-  console.log(`[Match] Starting stub ${matchId} with: ${players.map((p) => p.playerId).join(', ')}`);
-  players.forEach((entry) => {
-    entry.socket?.emit('match:start', { matchId, playerId: entry.playerId });
-  });
+const activeMatches = new Map<string, Match>();
+let matchCounter = 0;
+
+const startMatch = (players: LobbyEntry[]) => {
+  matchCounter += 1;
+  const matchId = `match-${matchCounter}`;
+  console.log(`[Match] Starting ${matchId} with: ${players.map((p) => p.playerId).join(', ')}`);
+  players.forEach((entry) => entry.socket?.emit('match:start', { matchId, playerId: entry.playerId }));
+  const match = new Match(io, matchId, players);
+  activeMatches.set(matchId, match);
 };
 
-const lobby = new LobbyManager(startStubMatch);
+const lobby = new LobbyManager(startMatch);
 
 app.post('/lobby/join', (req, res) => {
   const { playerId, characterKey } = req.body ?? {};

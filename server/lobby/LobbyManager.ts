@@ -19,7 +19,7 @@ export class LobbyManager {
 
   enqueue(entry: LobbyEntry) {
     this.queue.push(entry);
-    console.log(`[Lobby] ${entry.playerId} joined queue. size=${this.queue.length}`);
+    console.log(`[Lobby.enqueue] ${entry.playerId} joined queue. size=${this.queue.length}`);
     this.maybeStartMatch();
     return this.queue.length;
   }
@@ -28,7 +28,7 @@ export class LobbyManager {
     const before = this.queue.length;
     this.queue = this.queue.filter((entry) => entry.socketId !== socketId);
     if (before !== this.queue.length) {
-      console.log(`[Lobby] Socket ${socketId} disconnected; queue size now ${this.queue.length}`);
+      console.log(`[Lobby.removeBySocket] Socket ${socketId} disconnected; queue size now ${this.queue.length}`);
     }
   }
 
@@ -42,7 +42,7 @@ export class LobbyManager {
   private startMatch(players: LobbyEntry[]) {
     this.matchCount += 1;
     const matchId = `match-${this.matchCount}`;
-    console.log(`[Match] Starting stub ${matchId} with: ${players.map((p) => p.playerId).join(', ')}`);
+    console.log(`[Lobby.startMatch] Starting match ${matchId} with: ${players.map((p) => p.playerId).join(', ')}`);
     this.onMatchReady(players);
   }
 }
