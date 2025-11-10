@@ -1,27 +1,153 @@
+import { io, Socket } from 'socket.io-client';
 import { GameInterface, GameStateListener } from '../GameInterface';
+import { GameEngine, GameEngineOptions } from '../GameEngine';
 import { GameStateSnapshot } from '../state/GameState';
 import { PlayerInput } from '../state/PlayerInput';
+import { PlayerInputMessage, GameUpdateMessage } from '../net/types';
 
-/**
- * Placeholder server-backed implementation. The networking layer will plug in
- * Socket.IO (or similar) to stream authoritative state snapshots.
- */
+interface PredictionEntry {
+  tick: number;
+  input: PlayerInput;
+}
+
+interface ServerBackedOptions {
+  socketUrl: string;
+  playerId: string;
+  engineOptions: GameEngineOptions;
+  smoothingThreshold?: number;
+  smoothingFactor?: number; // 0..1
+}
+
 export class ServerBackedGameInterface implements GameInterface {
-  constructor(
-    private readonly socketFactory: () => Promise<any>,
-  ) {}
+  private socket: Socket | null = null;
+  private engine: GameEngine;
+  private latestAuthoritativeSnapshot: GameStateSnapshot | null = null;
+  private listeners = new Set<GameStateListener>();
+  private predictionBuffer: PredictionEntry[] = [];
+  private currentTick = 0;
+  private connected = false;
+  private localSnapshot: GameStateSnapshot | null = null;
+
+  private readonly smoothingThreshold: number;
+  private readonly smoothingFactor: number;
+
+  constructor(private readonly options: ServerBackedOptions) {
+    this.engine = new GameEngine(options.engineOptions);
+    this.smoothingThreshold = options.smoothingThreshold ?? 12;
+    this.smoothingFactor = options.smoothingFactor ?? 0.2;
+    this.connect();
+  }
+
+  private async connect() {
+    this.socket = io(this.options.socketUrl, {
+      transports: ['websocket'],
+    });
+
+    this.socket.on('connect', () => {
+      this.connected = true;
+    });
+
+    this.socket.on('disconnect', () => {
+      this.connected = false;
+      this.predictionBuffer = [];
+    });
+
+    this.socket.on('game:update', (message: GameUpdateMessage) => {
+      this.handleGameUpdate(message);
+    });
+  }
+
+  private handleGameUpdate(message: GameUpdateMessage) {
+    if (message.fullSnapshot && message.snapshot) {
+      this.latestAuthoritativeSnapshot = message.snapshot;
+      this.localSnapshot = message.snapshot;
+      this.predictionBuffer = [];
+      this.emitSnapshot();
+      return;
+    }
+
+    if (!this.latestAuthoritativeSnapshot || !message.delta) return;
+
+    this.latestAuthoritativeSnapshot = GameEngine.applySnapshotDelta(
+      this.latestAuthoritativeSnapshot,
+      message.delta,
+    );
+
+    this.replayPredictedInputs(message.tick);
+    this.correctPrediction();
+    this.emitSnapshot();
+  }
+
+  private replayPredictedInputs(serverTick: number) {
+    if (!this.latestAuthoritativeSnapshot) return;
+    // Rebuild engine state from authoritative snapshot.
+    this.engine = new GameEngine(this.options.engineOptions);
+    this.engine['currentSnapshot'] = this.latestAuthoritativeSnapshot; // bypass
+
+    const pendingInputs = this.predictionBuffer.filter((entry) => entry.tick > serverTick);
+    this.predictionBuffer = pendingInputs;
+    pendingInputs.forEach((entry) => {
+      this.engine.enqueueInput(entry.input);
+    });
+    this.engine.advance();
+    this.localSnapshot = this.engine.getSnapshot();
+  }
+
+  private correctPrediction() {
+    if (!this.latestAuthoritativeSnapshot || !this.localSnapshot) return;
+
+    const corrected = { ...this.localSnapshot, players: { ...this.localSnapshot.players } };
+    Object.entries(corrected.players).forEach(([id, player]) => {
+      const authoritative = this.latestAuthoritativeSnapshot!.players[id];
+      if (!authoritative) return;
+      const dx = authoritative.worldPosition.x - player.worldPosition.x;
+      const dy = authoritative.worldPosition.y - player.worldPosition.y;
+      const distanceSq = dx * dx + dy * dy;
+
+      if (distanceSq > this.smoothingThreshold * this.smoothingThreshold) {
+        player.worldPosition = { ...authoritative.worldPosition };
+      } else {
+        player.worldPosition = {
+          x: player.worldPosition.x + dx * this.smoothingFactor,
+          y: player.worldPosition.y + dy * this.smoothingFactor,
+        };
+      }
+    });
+
+    this.localSnapshot = corrected;
+  }
+
+  private emitSnapshot() {
+    if (!this.localSnapshot) return;
+    this.listeners.forEach((listener) => listener(this.localSnapshot!));
+  }
 
   getCurrentState(): GameStateSnapshot {
-    throw new Error('ServerBackedGameInterface not connected yet.');
+    if (this.localSnapshot) return this.localSnapshot;
+    return this.engine.getSnapshot();
   }
 
-  subscribeUpdates(_listener: GameStateListener) {
-    // TODO: wire up to socket events and return unsubscribe handler.
-    return () => {};
+  subscribeUpdates(listener: GameStateListener) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
-  enqueueInput(_input: PlayerInput) {
-    // TODO: send input to server once sockets are available.
+  enqueueInput(input: PlayerInput) {
+    const tick = ++this.currentTick;
+    this.engine.enqueueInput(input);
+    this.predictionBuffer.push({ tick, input });
+    this.localSnapshot = this.engine.getSnapshot();
+    this.emitSnapshot();
+
+    if (this.socket && this.connected) {
+      const message: PlayerInputMessage = {
+        playerId: this.options.playerId,
+        input,
+        tick,
+        sentAt: Date.now(),
+      };
+      this.socket.emit('player:input', message);
+    }
   }
 
   applyInput(input: PlayerInput) {
