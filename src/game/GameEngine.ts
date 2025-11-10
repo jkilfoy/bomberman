@@ -23,6 +23,10 @@ import { Direction } from './utils/direction';
 import { createEntityId } from './utils/id';
 import { Hitbox } from './utils/collision';
 import { CollisionSystem } from './systems/CollisionSystem';
+import { GameDelta, EntityCollectionKey } from './net/types';
+
+const COLLECTION_KEYS: EntityCollectionKey[] = ['players', 'bombs', 'explosions', 'obstacles', 'powerUps', 'enemies'];
+const CONFIG_KEYS: (keyof GameConfig)[] = ['mode', 'gridWidth', 'gridHeight', 'cellSize', 'tickIntervalMs'];
 
 export interface PlayerSpawnOptions {
   id?: string;
@@ -51,6 +55,8 @@ export class GameEngine {
   private readonly tickDuration: number;
   private tick = 0;
   private timestamp = 0;
+  private currentSnapshot: GameStateSnapshot | null = null;
+  private previousSnapshot: GameStateSnapshot | null = null;
   private readonly powerUpDropChance = 0.8;
 
   private players = new EntityManager<PlayerEntity>();
@@ -138,23 +144,70 @@ export class GameEngine {
     this.handleBombs();
     this.collisionSystem.step();
     this.cleanupExplosions();
+
+    this.previousSnapshot = this.currentSnapshot;
+    this.currentSnapshot = this.buildSnapshot();
   }
 
+  /** Get current snapshot, lazy building if absent */
   getSnapshot(): GameStateSnapshot {
-    return {
-      tick: this.tick,
-      timestamp: this.timestamp,
-      config: {
-        ...this.options.config,
-        tickIntervalMs: this.tickDuration,
-      },
-      players: this.players.toRecord<PlayerSnapshot>(),
-      bombs: this.bombs.toRecord<BombSnapshot>(),
-      explosions: this.explosions.toRecord<ExplosionSnapshot>(),
-      obstacles: this.obstacles.toRecord<ObstacleSnapshot>(),
-      powerUps: this.powerUps.toRecord<PowerUpSnapshot>(),
-      enemies: this.enemies.toRecord<EnemySnapshot>(),
+    if (!this.currentSnapshot) {
+      this.currentSnapshot = this.buildSnapshot();
+    }
+    return this.currentSnapshot;
+  }
+
+  getSnapshotDelta(previous: GameStateSnapshot | null = this.previousSnapshot): GameDelta | null {
+    if (!previous) {
+      return null;
+    }
+
+    const current = this.getSnapshot();
+    const delta: GameDelta = {
+      changed: {},
+      removed: {},
     };
+    let hasChanges = false;
+
+    /** Compare every config field; any differences go into configChanges */
+    const configChanges: Partial<Record<keyof GameConfig, GameConfig[keyof GameConfig]>> = {};
+    for (const key of CONFIG_KEYS as (keyof GameConfig)[]) {
+      const currentValue = current.config[key];
+      const previousValue = previous.config[key];
+      if (currentValue !== previousValue) {
+        configChanges[key] = currentValue as GameConfig[typeof key];
+        hasChanges = true;
+      }
+    }
+    
+    if (Object.keys(configChanges).length) {
+      delta.configChanged = configChanges;
+    }
+
+    COLLECTION_KEYS.forEach((key) => {
+      const currentCollection = current[key] as Record<string, any>;
+      const previousCollection = previous[key] as Record<string, any>;
+
+      Object.keys(currentCollection).forEach((id) => {
+        if (previousCollection[id] !== currentCollection[id]) {
+          (delta.changed[key] ??= {})[id] = currentCollection[id];
+          hasChanges = true;
+        }
+      });
+
+      Object.keys(previousCollection).forEach((id) => {
+        if (!currentCollection[id]) {
+          (delta.removed[key] ??= []).push(id);
+          hasChanges = true;
+        }
+      });
+    });
+
+    if (!hasChanges) {
+      return null;
+    }
+
+    return delta;
   }
 
   private processInputs() {
@@ -417,4 +470,60 @@ export class GameEngine {
         break;
     }
   } 
+
+  private buildSnapshot(): GameStateSnapshot {
+    const config: GameConfig = {
+      ...this.options.config,
+      tickIntervalMs: this.options.config.tickIntervalMs ?? this.tickDuration,
+    };
+
+    return {
+      tick: this.tick,
+      timestamp: this.timestamp,
+      config,
+      players: this.players.toRecord<PlayerSnapshot>(),
+      bombs: this.bombs.toRecord<BombSnapshot>(),
+      explosions: this.explosions.toRecord<ExplosionSnapshot>(),
+      obstacles: this.obstacles.toRecord<ObstacleSnapshot>(),
+      powerUps: this.powerUps.toRecord<PowerUpSnapshot>(),
+      enemies: this.enemies.toRecord<EnemySnapshot>(),
+    };
+  }
+
+  static applySnapshotDelta(base: GameStateSnapshot, delta: GameDelta): GameStateSnapshot {
+    const mergedConfig: GameConfig = delta.configChanged
+      ? ({ ...base.config, ...delta.configChanged } as GameConfig)
+      : base.config;
+
+    const next: GameStateSnapshot = {
+      ...base,
+      config: mergedConfig,
+      players: { ...base.players },
+      bombs: { ...base.bombs },
+      explosions: { ...base.explosions },
+      obstacles: { ...base.obstacles },
+      powerUps: { ...base.powerUps },
+      enemies: { ...base.enemies },
+    };
+
+    COLLECTION_KEYS.forEach((key) => {
+      const changed = delta.changed[key];
+      if (changed) {
+        Object.entries(changed).forEach(([id, entity]) => {
+          if (!entity) return;
+          (next[key] as Record<string, any>)[id] = entity;
+        });
+      }
+
+      const removed = delta.removed[key];
+      if (removed) {
+        removed.forEach((id) => {
+          delete (next[key] as Record<string, any>)[id];
+        });
+      }
+    });
+
+    return next;
+  }
+
 }

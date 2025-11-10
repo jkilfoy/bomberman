@@ -74,7 +74,7 @@ export interface EnemySnapshot extends EntitySnapshot {
 export interface GameStateSnapshot {
   tick: number;
   timestamp: number;
-  config: GameConfig & { tickIntervalMs: number };
+  config: GameConfig;
   players: Record<string, PlayerSnapshot>;
   bombs: Record<string, BombSnapshot>;
   explosions: Record<string, ExplosionSnapshot>;
