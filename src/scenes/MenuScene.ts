@@ -1,16 +1,25 @@
 import characters from "../characters/Characters"
 import { Character } from "../characters/Characters"
 import { GameMode } from "../core/GameConfig"
+import { io, Socket } from 'socket.io-client'
 
 export default class MenuScene extends Phaser.Scene {
 
     // Object to store character icons
     characterIcons: {[id: string] : Phaser.GameObjects.Image} = { }
     selectedCharacter: Character | null = null
+    lobbySocket?: Socket
+    waitingText?: Phaser.GameObjects.Text
+    queuedPlayerId: string | undefined
+    resultMessage: string | undefined
 
 
     constructor() {
       super('MenuScene')
+    }
+
+    init(data: { resultMessage?: string }) {
+      this.resultMessage = data?.resultMessage
     }
 
     preload() {
@@ -27,6 +36,10 @@ export default class MenuScene extends Phaser.Scene {
         const subHeadingStyle: Phaser.Types.GameObjects.Text.TextStyle = {
             fontSize: '20px',
             color: '#cccccc'
+        }
+
+        if (this.resultMessage) {
+            this.add.text(100, 40, this.resultMessage, { fontSize: '18px', color: '#ffdd55' });
         }
 
         this.add.text(100, 80, 'Welcome to BOMBERMAN', headingStyle)
@@ -59,13 +72,7 @@ export default class MenuScene extends Phaser.Scene {
 
         startGameButton.setInteractive({ useHandCursor: true });
 
-        startGameButton.on('pointerup', () => {
-            this.scene.start('GameScene', { 
-                selectedCharacter: this.selectedCharacter,
-                mode: GameMode.arena,
-                networked: true
-            })
-        });
+        startGameButton.on('pointerup', () => this.joinArenaQueue());
 
         // Add some basic hover feedback
         startGameButton.on('pointerover', () => {
@@ -107,6 +114,7 @@ export default class MenuScene extends Phaser.Scene {
 
         // Visually mark the default character
         this.updateCharacterHighlight()
+        this.setupLobbySocket()
 
     }
 
@@ -120,6 +128,59 @@ export default class MenuScene extends Phaser.Scene {
             characterIcon.setTint(key === this.selectedCharacter?.key ? 0xffd9ae : 0xffffff)
             characterIcon.setScale(key === this.selectedCharacter?.key ? characters[key].scale * 1.6 : characters[key].scale * 1.2)
         })
+    }
+
+    private setupLobbySocket() {
+        if (this.lobbySocket) return
+        this.lobbySocket = io('http://localhost:4000', { transports: ['websocket'] })
+        this.lobbySocket.on('lobby:queued', ({ position, playerId }) => {
+            this.queuedPlayerId = playerId
+            this.showWaiting(`Waiting for players... (#${position})`)
+        })
+        this.lobbySocket.on('lobby:error', ({ error }) => {
+            this.showWaiting(`Lobby error: ${error}`)
+        })
+        this.lobbySocket.on('match:start', ({ matchId, playerId }) => {
+            if (!this.queuedPlayerId) {
+                this.queuedPlayerId = playerId
+            }
+            if (playerId !== this.queuedPlayerId) return
+            this.hideWaiting()
+            this.scene.start('GameScene', {
+                selectedCharacter: this.selectedCharacter,
+                mode: GameMode.arena,
+                networked: true,
+                playerId,
+                matchId,
+                socket: this.lobbySocket,
+            })
+        })
+    }
+
+    private joinArenaQueue() {
+        if (!this.selectedCharacter) {
+            this.selectedCharacter = characters['eric']
+        }
+        if (!this.lobbySocket) {
+            this.showWaiting('Connecting to lobby...')
+            this.setupLobbySocket()
+        }
+        this.showWaiting('Waiting for players...')
+        this.lobbySocket?.emit('lobby:join', {
+            characterKey: this.selectedCharacter?.key ?? 'eric',
+        })
+    }
+
+    private showWaiting(message: string) {
+        if (!this.waitingText) {
+            this.waitingText = this.add.text(100, 520, '', { fontSize: '18px', color: '#ffcc00' })
+        }
+        this.waitingText.setText(message)
+        this.waitingText.setVisible(true)
+    }
+
+    private hideWaiting() {
+        this.waitingText?.setVisible(false)
     }
 
 }

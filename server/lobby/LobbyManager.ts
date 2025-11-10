@@ -20,7 +20,6 @@ export class LobbyManager {
   enqueue(entry: LobbyEntry) {
     this.queue.push(entry);
     console.log(`[Lobby.enqueue] ${entry.playerId} joined queue. size=${this.queue.length}`);
-    this.maybeStartMatch();
     return this.queue.length;
   }
 
@@ -32,7 +31,7 @@ export class LobbyManager {
     }
   }
 
-  private maybeStartMatch() {
+  processMatches() {
     while (this.queue.length >= 4) {
       const players = this.queue.splice(0, 4);
       this.startMatch(players);

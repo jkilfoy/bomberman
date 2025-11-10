@@ -18,6 +18,9 @@ const io = new Server(server, {
 
 const activeMatches = new Map<string, Match>();
 let matchCounter = 0;
+let playerCounter = 0;
+
+const generatePlayerId = () => `player-${++playerCounter}`;
 
 const startMatch = (players: LobbyEntry[]) => {
   matchCounter += 1;
@@ -34,27 +37,31 @@ const startMatch = (players: LobbyEntry[]) => {
 const lobby = new LobbyManager(startMatch);
 
 app.post('/lobby/join', (req, res) => {
-  const { playerId, characterKey } = req.body ?? {};
-  if (!playerId || !characterKey) {
-    return res.status(400).json({ error: 'playerId and characterKey are required' });
+  const { characterKey } = req.body ?? {};
+  if (!characterKey) {
+    return res.status(400).json({ error: 'characterKey is required' });
   }
+  const playerId = generatePlayerId();
   const position = lobby.enqueue({ playerId, characterKey });
-  res.json({ position });
+  res.json({ position, playerId });
+  lobby.processMatches();
 });
 
 io.on('connection', (socket) => {
-  socket.on('lobby:join', (payload: { playerId?: string; characterKey?: string }) => {
-    if (!payload?.playerId || !payload.characterKey) {
-      socket.emit('lobby:error', { error: 'playerId and characterKey required' });
+  socket.on('lobby:join', (payload: { characterKey?: string }) => {
+    if (!payload?.characterKey) {
+      socket.emit('lobby:error', { error: 'characterKey required' });
       return;
     }
+    const playerId = generatePlayerId();
     const position = lobby.enqueue({
       socket,
       socketId: socket.id,
-      playerId: payload.playerId,
+      playerId,
       characterKey: payload.characterKey,
     });
-    socket.emit('lobby:queued', { position });
+    socket.emit('lobby:queued', { position, playerId });
+    lobby.processMatches();
   });
 
   socket.on('disconnect', () => {

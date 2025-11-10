@@ -4,6 +4,7 @@ import { GameInterface } from '../game/GameInterface';
 import { LocalGameInterface } from '../game/interfaces/LocalGameInterface';
 import { ServerBackedGameInterface } from '../game/interfaces/ServerBackedGameInterface';
 import { GameEngineOptions } from '../game/GameEngine';
+import type { Socket } from 'socket.io-client';
 import { PlayerInput } from '../game/state/PlayerInput';
 import { Direction } from '../game/utils/direction';
 import KeyboardController from '../input/KeyboardController';
@@ -25,6 +26,9 @@ export default class GameScene extends Phaser.Scene {
   private lastPing = 0;
   private lastUpdateTick = 0;
   private selectedCharacter!: Character;
+  private matchId: string | undefined;
+  private networkSocket: Socket | undefined;
+  private matchConcluded = false;
 
   private playerSprites: RenderCollection<Phaser.GameObjects.Image> = new Map();
   private bombSprites: RenderCollection<Phaser.GameObjects.Arc> = new Map();
@@ -38,7 +42,7 @@ export default class GameScene extends Phaser.Scene {
     super('GameScene');
   }
 
-  init(data: { selectedCharacter?: Character; mode?: GameMode; networked?: boolean }) {
+  init(data: { selectedCharacter?: Character; mode?: GameMode; networked?: boolean; playerId?: string; matchId?: string; socket?: Socket } = {}) {
     this.selectedCharacter = data?.selectedCharacter ?? characters['eric'];
     this.config = {
       mode: data?.mode ?? GameMode.practise,
@@ -48,6 +52,10 @@ export default class GameScene extends Phaser.Scene {
       tickIntervalMs: 1000 / 60,
     };
     this.useServer = Boolean(data?.networked);
+    if (data?.playerId) this.localPlayerId = data.playerId;
+    this.matchId = data?.matchId;
+    this.networkSocket = data?.socket;
+    this.matchConcluded = false;
   }
 
   preload() {
@@ -73,19 +81,28 @@ export default class GameScene extends Phaser.Scene {
       ],
     };
 
-    this.interface = this.useServer
-      ? new ServerBackedGameInterface({
-          socketUrl: 'http://localhost:4000',
-          playerId: this.localPlayerId,
-          engineOptions,
-        })
-      : new LocalGameInterface(engineOptions);
+    if (this.useServer) {
+      const serverOptions: ConstructorParameters<typeof ServerBackedGameInterface>[0] = {
+        socketUrl: 'http://localhost:4000',
+        playerId: this.localPlayerId,
+        engineOptions,
+        onMatchEnd: (payload: { matchId: string; reason: string }) => this.handleMatchEnd(payload),
+      };
+      if (this.matchId) serverOptions.matchId = this.matchId;
+      if (this.networkSocket) serverOptions.socket = this.networkSocket;
+      this.interface = new ServerBackedGameInterface(serverOptions);
+    } else {
+      this.interface = new LocalGameInterface(engineOptions);
+    }
 
     this.drawGrid();
     this.debugText = this.add.text(10, 10, '', {
       fontSize: '14px',
       color: '#00ff00',
     }).setDepth(1000);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      (this.interface as any)?.destroy?.();
+    });
   }
 
   update(time: number, delta: number) {
@@ -353,6 +370,14 @@ export default class GameScene extends Phaser.Scene {
       if (!players[id]) {
         this.stopInvincibilityTween(id);
       }
+    });
+  }
+
+  private handleMatchEnd(payload: { matchId: string; reason: string }) {
+    if (this.matchConcluded) return;
+    this.matchConcluded = true;
+    this.time.delayedCall(1000, () => {
+      this.scene.start('MenuScene', { resultMessage: `Match ended: ${payload.reason}` });
     });
   }
 }

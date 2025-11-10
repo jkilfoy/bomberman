@@ -12,14 +12,18 @@ interface PredictionEntry {
 
 interface ServerBackedOptions {
   socketUrl: string;
+  socket?: Socket;
   playerId: string;
+  matchId?: string;
   engineOptions: GameEngineOptions;
   smoothingThreshold?: number;
   smoothingFactor?: number; // 0..1
+  onMatchEnd?: (payload: { matchId: string; reason: string }) => void;
 }
 
 export class ServerBackedGameInterface implements GameInterface {
   private socket: Socket | null = null;
+  private ownsSocket = false;
   private engine: GameEngine;
   private latestAuthoritativeSnapshot: GameStateSnapshot | null = null;
   private listeners = new Set<GameStateListener>();
@@ -35,14 +39,19 @@ export class ServerBackedGameInterface implements GameInterface {
     this.engine = new GameEngine(options.engineOptions);
     this.smoothingThreshold = options.smoothingThreshold ?? 12;
     this.smoothingFactor = options.smoothingFactor ?? 0.2;
-    this.connect();
+    this.setupSocket();
   }
 
-  private async connect() {
-    this.socket = io(this.options.socketUrl, {
-      transports: ['websocket'],
-    });
-
+  private setupSocket() {
+    if (this.options.socket) {
+      this.socket = this.options.socket;
+    } else {
+      this.socket = io(this.options.socketUrl, {
+        transports: ['websocket'],
+      });
+      this.ownsSocket = true;
+    }
+    
     this.socket.on('connect', () => {
       this.connected = true;
     });
@@ -54,6 +63,10 @@ export class ServerBackedGameInterface implements GameInterface {
 
     this.socket.on('game:update', (message: GameUpdateMessage) => {
       this.handleGameUpdate(message);
+    });
+    this.socket.on('match:end', (payload: { matchId: string; reason: string }) => {
+      if (this.options.matchId && payload.matchId !== this.options.matchId) return;
+      this.options.onMatchEnd?.(payload);
     });
   }
 
@@ -152,5 +165,12 @@ export class ServerBackedGameInterface implements GameInterface {
 
   applyInput(input: PlayerInput) {
     this.enqueueInput(input);
+  }
+
+  destroy() {
+    if (this.ownsSocket) {
+      this.socket?.disconnect();
+    }
+    this.listeners.clear();
   }
 }
