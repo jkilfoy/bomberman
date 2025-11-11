@@ -1,4 +1,4 @@
-import type { Server } from 'socket.io';
+import type { Server, Socket } from 'socket.io';
 import { GameEngine, GameEngineOptions } from '../../src/game/GameEngine';
 import { GameMode } from '../../src/core/GameConfig';
 import type { LobbyEntry } from '../lobby/LobbyManager';
@@ -15,6 +15,8 @@ const MATCH_DURATION_MS = 2 * 60 * 1000;
  */
 export class Match {
   private engine: GameEngine;
+
+  private initialSnapshotSent = false;
 
   // This handles the match tick updates
   private tickHandle?: NodeJS.Timeout;
@@ -33,7 +35,6 @@ export class Match {
   ) {
     this.engine = new GameEngine(this.buildOptions());
     this.attachSockets();
-    this.sendInitialSnapshot();
     this.startTickLoop();
   }
 
@@ -63,28 +64,37 @@ export class Match {
       if (!entry.socket) {
         console.error('Socket does not exist on player: ', entry, this);
         return;
-      } 
-      entry.socket.join(this.roomName);
-      const inputHandler = (message: PlayerInputMessage) => {
-        if (message.playerId !== entry.playerId) return;
-        this.engine.enqueueInput(message.input);
-      };
-      const disconnectHandler = () => this.onPlayerDisconnect(entry.playerId);
-      this.socketHandlers.set(entry.socket.id, { input: inputHandler, disconnect: disconnectHandler });
-      entry.socket.on('player:input', inputHandler);
-      entry.socket.once('disconnect', disconnectHandler);
+      }
+      this.registerSocket(entry.playerId, entry.socket, false);
     });
   }
 
-  private sendInitialSnapshot() {
-    const snapshot = this.engine.getSnapshot();
-    const update: GameUpdateMessage = {
-      tick: snapshot.tick,
-      timestamp: snapshot.timestamp,
-      fullSnapshot: true,
-      snapshot,
+  /**
+   * Registers a socket for a player to handle input messages.
+   */
+  registerSocket(playerId: string, socket: Socket, sendSnapshot = true) {
+    socket.join(this.roomName);
+    const inputHandler = (message: PlayerInputMessage) => {
+      if (message.playerId !== playerId) return;
+      this.engine.enqueueInput(message.input);
     };
-    this.io.to(this.roomName).emit('game:update', update);
+    const disconnectHandler = () => this.onPlayerDisconnect(playerId);
+    this.socketHandlers.set(socket.id, { input: inputHandler, disconnect: disconnectHandler });
+    socket.on('player:input', inputHandler);
+    socket.once('disconnect', disconnectHandler);
+
+    this.sendInitialSnapshot(playerId, socket);
+  }
+
+  private sendInitialSnapshot(playerId: string, socket: Socket) {
+    socket.emit('match:start', { 
+        matchId: this.id, 
+        playerId: playerId, 
+        roster: this.roster,
+        initialSnapshot: this.engine.getSnapshot()
+      });
+
+    this.initialSnapshotSent = true;
   }
 
   private get roomName() {
@@ -94,10 +104,12 @@ export class Match {
   // Main Match tick loop
   // Starts the game tick loop. This advances the engine and sends updates to clients at each tick.
   private startTickLoop() {
+
     this.tickHandle = setInterval(() => {
       this.engine.advance();
       const delta = this.engine.getSnapshotDelta();
       if (delta == null) return;
+      if (!this.initialSnapshotSent) return;
       const snapshot = this.engine.getSnapshot();
       const update: GameUpdateMessage = {
         tick: snapshot.tick,
@@ -126,6 +138,12 @@ export class Match {
     this.engine.removePlayer(playerId);
     const snapshot = this.engine.getSnapshot();
     this.evaluateEndConditions(snapshot);
+  }
+
+  forwardInput(message: PlayerInputMessage & { matchId?: string }) {
+    const player = this.players.find((entry) => entry.playerId === message.playerId);
+    if (!player) return;
+    this.engine.enqueueInput(message.input);
   }
 
 

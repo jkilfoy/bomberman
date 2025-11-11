@@ -498,6 +498,39 @@ export class GameEngine {
     };
   }
 
+  loadSnapshot(snapshot: GameStateSnapshot) {
+    this.tick = snapshot.tick;
+    this.timestamp = snapshot.timestamp;
+    this.players.clear();
+    this.bombs.clear();
+    this.explosions.clear();
+    this.obstacles.clear();
+    this.powerUps.clear();
+    this.enemies.clear();
+
+    Object.values(snapshot.players).forEach((player) => {
+      this.players.add(new PlayerEntity({ state: player, grid: this.grid }));
+    });
+    Object.values(snapshot.bombs).forEach((bomb) => {
+      this.bombs.add(new BombEntity({ state: bomb }));
+    });
+    Object.values(snapshot.explosions).forEach((explosion) => {
+      this.explosions.add(new ExplosionEntity({ state: explosion }));
+    });
+    Object.values(snapshot.obstacles).forEach((obstacle) => {
+      this.obstacles.add(new ObstacleEntity({ state: obstacle }));
+    });
+    Object.values(snapshot.powerUps).forEach((powerUp) => {
+      this.powerUps.add(new PowerUpEntity({ state: powerUp }));
+    });
+    Object.values(snapshot.enemies).forEach((enemy) => {
+      this.enemies.add(new EnemyEntity({ state: enemy, grid: this.grid }));
+    });
+
+    this.currentSnapshot = snapshot;
+    this.previousSnapshot = null;
+  }
+
   static applySnapshotDelta(base: GameStateSnapshot, delta: GameDelta): GameStateSnapshot {
     const mergedConfig: GameConfig = delta.configChanged
       ? ({ ...base.config, ...delta.configChanged } as GameConfig)

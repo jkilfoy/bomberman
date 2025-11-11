@@ -39,6 +39,7 @@ export default class GameScene extends Phaser.Scene {
   private matchConcluded = false;
   private matchOverlay?: Phaser.GameObjects.Text;
   private networkRoster: NetworkRosterEntry[] | undefined;
+  private initialSnapshot: GameStateSnapshot | undefined;
 
   private playerSprites: RenderCollection<Phaser.GameObjects.Image> = new Map();
   private bombSprites: RenderCollection<Phaser.GameObjects.Arc> = new Map();
@@ -52,7 +53,16 @@ export default class GameScene extends Phaser.Scene {
     super('GameScene');
   }
 
-  init(data: { selectedCharacter?: Character; mode?: GameMode; networked?: boolean; playerId?: string; matchId?: string; socket?: Socket; roster?: NetworkRosterEntry[] } = {}) {
+  init(data: { 
+      selectedCharacter?: Character; 
+      mode?: GameMode; 
+      networked?: boolean; 
+      playerId?: string; 
+      matchId?: string; 
+      socket?: Socket; 
+      roster?: NetworkRosterEntry[];
+      initialSnapshot?: GameStateSnapshot;
+    } = {}) {
     this.selectedCharacter = data?.selectedCharacter ?? characters['eric'];
     this.config = {
       mode: data?.mode ?? GameMode.practise,
@@ -66,6 +76,7 @@ export default class GameScene extends Phaser.Scene {
     this.matchId = data?.matchId;
     this.networkSocket = data?.socket;
     this.networkRoster = data?.roster;
+    this.initialSnapshot = data?.initialSnapshot;
     if (this.useServer && this.networkRoster) {
       const localInfo = this.networkRoster.find((entry) => entry.playerId === this.localPlayerId);
       if (localInfo) {
@@ -117,7 +128,7 @@ export default class GameScene extends Phaser.Scene {
       };
       if (this.matchId) serverOptions.matchId = this.matchId;
       if (this.networkSocket) serverOptions.socket = this.networkSocket;
-      this.interface = new ServerBackedGameInterface(serverOptions);
+      this.interface = new ServerBackedGameInterface(serverOptions, this.initialSnapshot);
     } else {
       this.interface = new LocalGameInterface(engineOptions);
     }
@@ -146,6 +157,7 @@ export default class GameScene extends Phaser.Scene {
       direction,
       clientTime: time,
     };
+    console.log("Sending movement input:", movementInput.direction);
     this.interface.enqueueInput(movementInput);
 
     if (this.controller.bomb.justPressed()) {

@@ -145,10 +145,12 @@ export default class MenuScene extends Phaser.Scene {
             this.queuedPlayerId = playerId
             this.showWaiting(`Waiting for players... (#${position})`)
         })
+
         this.lobbySocket.on('lobby:error', ({ error }) => {
             this.showWaiting(`Lobby error: ${error}`)
         })
-        this.lobbySocket.on('match:start', ({ matchId, playerId, roster }) => {
+
+        this.lobbySocket.on('match:start', ({ matchId, playerId, roster, initialSnapshot }) => {
             if (!this.queuedPlayerId) {
                 this.queuedPlayerId = playerId
             }
@@ -162,6 +164,7 @@ export default class MenuScene extends Phaser.Scene {
                 matchId,
                 socket: this.lobbySocket,
                 roster,
+                initialSnapshot
             })
         })
     }

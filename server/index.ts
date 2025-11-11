@@ -5,6 +5,7 @@ import { LobbyManager, LobbyEntry } from './lobby/LobbyManager';
 import { Match } from './match/Match';
 import { getSpawnForIndex } from './match/spawnPositions';
 import type { MatchPlayerInfo } from './match/types';
+import type { PlayerInputMessage } from '../src/game/net/types';
 
 const PORT = Number(process.env.PORT) || 4000;
 
@@ -34,7 +35,6 @@ const startMatch = (players: LobbyEntry[]) => {
     name: entry.playerId,
     spawn: getSpawnForIndex(idx),
   }));
-  players.forEach((entry) => entry.socket?.emit('match:start', { matchId, playerId: entry.playerId, roster }));
   const match = new Match(io, matchId, players, roster, (finishedId) => {
     activeMatches.delete(finishedId);
     console.log(`[Match] ${finishedId} cleaned up.`);
@@ -70,6 +70,22 @@ io.on('connection', (socket) => {
     });
     socket.emit('lobby:queued', { position, playerId });
     lobby.processMatches();
+  });
+
+  socket.on('match:join', ({ matchId, playerId }) => {
+    const match = activeMatches.get(matchId);
+    if (!match) {
+      socket.emit('match:error', { error: 'Match not found', matchId });
+      return;
+    }
+    match.registerSocket(playerId, socket);
+  });
+
+  socket.on('player:input', (message: PlayerInputMessage & { matchId?: string }) => {
+    if (!message.matchId) return;
+    const match = activeMatches.get(message.matchId);
+    if (!match) return;
+    match.forwardInput(message);
   });
 
   socket.on('disconnect', () => {

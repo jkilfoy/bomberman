@@ -35,15 +35,21 @@ export class ServerBackedGameInterface implements GameInterface {
   private readonly smoothingThreshold: number;
   private readonly smoothingFactor: number;
 
-  constructor(private readonly options: ServerBackedOptions) {
+  constructor(private readonly options: ServerBackedOptions, private initialSnapshot?: GameStateSnapshot) {
     this.engine = new GameEngine(options.engineOptions);
+    this.latestAuthoritativeSnapshot = initialSnapshot || null;
+    this.localSnapshot = initialSnapshot || null;
     this.smoothingThreshold = options.smoothingThreshold ?? 12;
     this.smoothingFactor = options.smoothingFactor ?? 0.2;
     this.setupSocket();
   }
 
+  /**
+   * Sets up the socket connection and event listeners for receiving game updates
+   */
   private setupSocket() {
     if (this.options.socket) {
+      this.connected = true;
       this.socket = this.options.socket;
     } else {
       this.socket = io(this.options.socketUrl, {
@@ -51,9 +57,10 @@ export class ServerBackedGameInterface implements GameInterface {
       });
       this.ownsSocket = true;
     }
-    
+
     this.socket.on('connect', () => {
       this.connected = true;
+      this.socket?.emit('match:join', { matchId: this.options.matchId, playerId: this.options.playerId });
     });
 
     this.socket.on('disconnect', () => {
@@ -62,8 +69,10 @@ export class ServerBackedGameInterface implements GameInterface {
     });
 
     this.socket.on('game:update', (message: GameUpdateMessage) => {
+      console.log("Handling game update message:", message);
       this.handleGameUpdate(message);
     });
+    
     this.socket.on('match:end', (payload: { matchId: string; reason: string }) => {
       if (this.options.matchId && payload.matchId !== this.options.matchId) return;
       this.options.onMatchEnd?.(payload);
@@ -73,6 +82,7 @@ export class ServerBackedGameInterface implements GameInterface {
   private handleGameUpdate(message: GameUpdateMessage) {
     if (message.fullSnapshot && message.snapshot) {
       this.latestAuthoritativeSnapshot = message.snapshot;
+      this.engine.loadSnapshot(message.snapshot);
       this.localSnapshot = message.snapshot;
       this.predictionBuffer = [];
       this.emitSnapshot();
@@ -86,6 +96,7 @@ export class ServerBackedGameInterface implements GameInterface {
       message.delta,
     );
 
+    this.engine.loadSnapshot(this.latestAuthoritativeSnapshot);
     this.replayPredictedInputs(message.tick);
     this.correctPrediction();
     this.emitSnapshot();
@@ -93,10 +104,7 @@ export class ServerBackedGameInterface implements GameInterface {
 
   private replayPredictedInputs(serverTick: number) {
     if (!this.latestAuthoritativeSnapshot) return;
-    // Rebuild engine state from authoritative snapshot.
-    this.engine = new GameEngine(this.options.engineOptions);
-    this.engine['currentSnapshot'] = this.latestAuthoritativeSnapshot; // bypass
-
+    this.engine.loadSnapshot(this.latestAuthoritativeSnapshot);
     const pendingInputs = this.predictionBuffer.filter((entry) => entry.tick > serverTick);
     this.predictionBuffer = pendingInputs;
     pendingInputs.forEach((entry) => {
@@ -146,6 +154,7 @@ export class ServerBackedGameInterface implements GameInterface {
   }
 
   enqueueInput(input: PlayerInput) {
+    console.log("Enqueueing input locally:", input);
     const tick = ++this.currentTick;
     this.engine.enqueueInput(input);
     this.predictionBuffer.push({ tick, input });
@@ -153,13 +162,15 @@ export class ServerBackedGameInterface implements GameInterface {
     this.emitSnapshot();
 
     if (this.socket && this.connected) {
+      console.log("Enqueuing input:", input);
       const message: PlayerInputMessage = {
         playerId: this.options.playerId,
         input,
         tick,
         sentAt: Date.now(),
       };
-      this.socket.emit('player:input', message);
+      console.log("message: " , message);
+      this.socket.emit('player:input', { ...message, matchId: this.options.matchId });
     }
   }
 
