@@ -157,7 +157,7 @@ export default class GameScene extends Phaser.Scene {
       direction,
       clientTime: time,
     };
-    console.log("Sending movement input:", movementInput.direction);
+
     this.interface.enqueueInput(movementInput);
 
     if (this.controller.bomb.justPressed()) {
