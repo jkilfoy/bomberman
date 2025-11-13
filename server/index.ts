@@ -7,7 +7,7 @@ import { getSpawnForIndex } from './match/spawnPositions';
 import type { MatchPlayerInfo } from './match/types';
 import type { PlayerInputMessage } from '../src/game/net/types';
 
-const PORT = Number(process.env.PORT) || 4000;
+const PORT = Number(process.env.PORT) || 9653;
 
 const app = express();
 app.use(express.json());

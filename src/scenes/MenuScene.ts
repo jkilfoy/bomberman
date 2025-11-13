@@ -140,7 +140,7 @@ export default class MenuScene extends Phaser.Scene {
 
     private setupLobbySocket() {
         if (this.lobbySocket) return
-        this.lobbySocket = io('http://localhost:4000', { transports: ['websocket'] })
+        this.lobbySocket = io('http://localhost:9653', { transports: ['websocket'] })
         this.lobbySocket.on('lobby:queued', ({ position, playerId }) => {
             this.queuedPlayerId = playerId
             this.showWaiting(`Waiting for players... (#${position})`)

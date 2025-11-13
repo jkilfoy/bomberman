@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "ts-node src/index.ts",
     "vite": "vite",
+    "vite-network": "vite --host",
     "build": "tsc -p tsconfig.build.json && vite build",
     "preview": "vite preview",
     "server:build": "tsc -p tsconfig.build.json",

@@ -4,7 +4,7 @@ export default defineConfig({
   root: './',
   server: {
     open: true,  // auto-open browser
-    port: 5173
+    port: 9652
   },
   build: {
     outDir: 'dist',

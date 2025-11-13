@@ -121,7 +121,7 @@ export default class GameScene extends Phaser.Scene {
 
     if (this.useServer) {
       const serverOptions: ConstructorParameters<typeof ServerBackedGameInterface>[0] = {
-        socketUrl: 'http://localhost:4000',
+        socketUrl: 'http://localhost:9653',
         playerId: this.localPlayerId,
         engineOptions,
         onMatchEnd: (payload: { matchId: string; reason: string }) => this.handleMatchEnd(payload),
