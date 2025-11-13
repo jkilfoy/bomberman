@@ -32,16 +32,18 @@ export interface GameDelta {
   configChanged?: Partial<Record<keyof GameStateSnapshot['config'], GameStateSnapshot['config'][keyof GameStateSnapshot['config']]>>;
 }
 
+/** Message sent from client to server containing player input */
 export interface PlayerInputMessage {
   playerId: string;
   input: PlayerInput;
-  tick: number;
+  sequence: number;     // sequence number of this input for ordering
   sentAt: number;
 }
 
 export interface GameUpdateMessage {
   tick: number;
   timestamp: number;
+  playerInputSequence: Record<string, number>;  // tells player's the sequence number of their last input acknowledged by server
   fullSnapshot?: boolean;
   snapshot?: GameStateSnapshot;
   delta?: GameDelta;
