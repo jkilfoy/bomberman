@@ -3,7 +3,7 @@ import { GameInterface, GameStateListener } from '../GameInterface';
 import { GameEngine, GameEngineOptions } from '../GameEngine';
 import { GameStateSnapshot } from '../state/GameState';
 import { PlayerInput } from '../state/PlayerInput';
-import { PlayerInputMessage, GameUpdateMessage } from '../net/types';
+import { PlayerInputMessage, GameUpdateMessage, GameDelta } from '../net/types';
 
 /**
  * Client-side prediction + server reconciliation implementation.
@@ -77,7 +77,7 @@ export class ServerBackedGameInterface implements GameInterface {
   // Prediction
   private playerInputBuffer: PlayerInputEntry[] = []; // inputs sent but not yet acknowledged by server
   private currentInputSeq = 0; // client-side sequence counter for inputs
-  private lastAcknowledgedInputSeq = 0; // last sequence acknowledged by server
+  private lastAcknowledgedInputSeq = 0; // last player input sequence acknowledged by server
 
   // Listeners (GameScene)
   private listeners = new Set<GameStateListener>();
@@ -88,7 +88,11 @@ export class ServerBackedGameInterface implements GameInterface {
 
   // Queue of incoming snapshots to be applied after hold-back
   // All snapshots in queue are full snapshots (deltas have been applied already)
-  private readonly snapshotQueue: { snapshot: GameStateSnapshot; receivedAt: number }[] = [];
+  private readonly pendingSnapshotQueue: { 
+    pendingSnapshot: GameStateSnapshot; 
+    receivedAt: number;
+    lastAcknowledgedInputSeq: number;
+  }[] = [];
 
   constructor(private readonly options: ServerBackedOptions, initialSnapshot?: GameStateSnapshot) {
     this.engine = new GameEngine(options.engineOptions);
@@ -99,7 +103,6 @@ export class ServerBackedGameInterface implements GameInterface {
       this.serverSnapshot = initialSnapshot;
       this.engine.loadSnapshot(initialSnapshot);
       this.localSnapshot = initialSnapshot;
-      // this.lastAcknowledgedSeq = initialSnapshot.tick;
     }
 
     this.setupSocket();
@@ -150,57 +153,74 @@ export class ServerBackedGameInterface implements GameInterface {
   // ---- Incoming server updates ------------------------------------------
 
   private onGameUpdate(message: GameUpdateMessage) {
+    const currInputSeq = message.playerInputSequence[this.options.playerId] || this.lastAcknowledgedInputSeq;
+    
     // If the update contains a complete snapshot, enqueue the full snapshot
     if (message.fullSnapshot && message.snapshot) {
-      this.snapshotQueue.push({ snapshot: message.snapshot, receivedAt: performance.now() });
+      this.pendingSnapshotQueue.push({ 
+        pendingSnapshot: message.snapshot, 
+        receivedAt: performance.now(),
+        lastAcknowledgedInputSeq: currInputSeq
+      });
       return;
     }
 
-    // Otherwise, apply delta to last server snapshot
-    if (!this.serverSnapshot || !message.delta) return;
+    // If initial snapshot or delta is missing, nothing to apply
+    if (!message.delta) {
+      console.warn('[ServerBackedGameInterface.onGameUpdate] Delta is missing.');
+      return;
+    }
 
-    const merged = GameEngine.applySnapshotDelta(this.serverSnapshot, message.delta);
-    merged.tick = message.tick ?? merged.tick;
+    // Otherwise, apply delta to existing authoritative snapshot if it exists
+    const merged = this.applyDeltaSnapshot(message.delta, message.tick, message.timestamp);
+    if (!merged) {
+      console.warn('[ServerBackedGameInterface.onGameUpdate] No existing server snapshot to apply delta to. Skipping update.');
+      return;
+    }
 
-    this.snapshotQueue.push({ snapshot: merged, receivedAt: performance.now() });
+    this.pendingSnapshotQueue.push({ 
+      pendingSnapshot: merged, 
+      receivedAt: performance.now(),
+      lastAcknowledgedInputSeq: currInputSeq,
+    });
   }
 
   // Apply the next snapshot from the queue whose receivedAt is older than holdBackMs
   private applyPendingServerSnapshots() {
-    if (this.snapshotQueue.length === 0) return;
+    if (this.pendingSnapshotQueue.length === 0) return;
     const cutoff = performance.now() - this.holdBackMs;
 
     // Find the last snapshot that is older than cutoff
     let index = -1;
-    for (let i = 0; i < this.snapshotQueue.length; i++) {
-      if (this.snapshotQueue[i].receivedAt <= cutoff) index = i;
+    for (let i = 0; i < this.pendingSnapshotQueue.length; i++) {
+      if (this.pendingSnapshotQueue[i].receivedAt <= cutoff) index = i;
       else break; // queue is chronological
     }
     if (index < 0) return; // nothing ready yet
 
-    const { snapshot } = this.snapshotQueue[index];
+    const { pendingSnapshot, lastAcknowledgedInputSeq } = this.pendingSnapshotQueue[index];
     // Drop all older-or-equal queued items
-    this.snapshotQueue.splice(0, index + 1);
+    this.pendingSnapshotQueue.splice(0, index + 1);
 
     // Only handle this snapshot if it's newer than what we already have
-    if (this.serverSnapshot && this.serverSnapshot.tick >= snapshot.tick) {  
+    if (this.serverSnapshot && this.serverSnapshot.tick >= pendingSnapshot.tick) {  
       return;
     }
 
     // If we have no prior state, or the new tick is 0, apply full snapshot
-    if (!this.serverSnapshot || snapshot.tick === 0) { // todo : handle bug
-      this.resetToAuthoritativeState(snapshot);
+    if (!this.serverSnapshot || pendingSnapshot.tick === 0) { // todo : handle bug
+      this.resetToAuthoritativeState(pendingSnapshot, lastAcknowledgedInputSeq);
       return;
     }
 
     // Otherwise reconcile local state with the server's state
-    this.reconcileWithServerState(snapshot);
+    this.reconcileWithServerState(pendingSnapshot, lastAcknowledgedInputSeq);
   }
 
   /** Resets local state to match the server snapshot */
-  private resetToAuthoritativeState(snapshot: GameStateSnapshot) {
+  private resetToAuthoritativeState(snapshot: GameStateSnapshot, lastAcknowledgedInputSeq: number) {
     this.serverSnapshot = snapshot;
-    this.lastAcknowledgedInputSeq = snapshot.lastAcknowledgedInputSeq;
+    this.lastAcknowledgedInputSeq = lastAcknowledgedInputSeq;
     this.engine.loadSnapshot(snapshot);
     this.playerInputBuffer = [];
     // Replace local snapshot immediately to avoid showing stale state
@@ -208,10 +228,10 @@ export class ServerBackedGameInterface implements GameInterface {
   }
 
   /** Applies a reconciliation step between the local and server state */
-  private reconcileWithServerState(snapshot: GameStateSnapshot) {
+  private reconcileWithServerState(snapshot: GameStateSnapshot, lastAcknowledgedInputSeq: number) {
     // Treat as authoritative base, then replay predictions newer than server tick
     this.serverSnapshot = snapshot;
-    this.lastAcknowledgedInputSeq = snapshot.lastAcknowledgedInputSeq;
+    this.lastAcknowledgedInputSeq = lastAcknowledgedInputSeq;
     this.engine.loadSnapshot(snapshot);
 
     // Re-simulate any inputs that client sent AFTER the server tick
@@ -345,7 +365,7 @@ export class ServerBackedGameInterface implements GameInterface {
       const message: PlayerInputMessage = {
         playerId: this.options.playerId,
         input,
-        tick: inputSeq,
+        sequence: inputSeq,
         sentAt: Date.now(),
       };
       this.socket.emit('player:input', { ...message, matchId: this.options.matchId });
@@ -373,4 +393,60 @@ export class ServerBackedGameInterface implements GameInterface {
   private emitSnapshot(snapshot: GameStateSnapshot) {
     this.listeners.forEach((l) => l(snapshot));
   }
+
+  /**
+   * Apply a delta update received from the server to the last known authoritative snapshot.
+   * 
+   * This merges partial entity changes, additions, and removals into the
+   * existing authoritative snapshot (this.serverSnapshot), without replacing it entirely.
+   * 
+   * After merging, the authoritative snapshot reflects the most up-to-date world state
+   * according to the server, ready to be used in reconciliation.
+   */
+  private applyDeltaSnapshot(delta: GameDelta, tick: number, timestamp: number) : GameStateSnapshot | null {
+
+    if (this.serverSnapshot === null) {
+      console.error('[ServerBackedGameInterface.applyDeltaSnapshot] No existing server snapshot to apply delta to.');
+      return null;
+    }
+
+    // Clone current authoritative state (to avoid mutating old reference mid-frame)
+    const merged: GameStateSnapshot = structuredClone(this.serverSnapshot);
+
+    // Merge changed entities
+    if (delta.changed) {
+      for (const [collectionKey, changedEntities] of Object.entries(delta.changed)) {
+        const targetCollection = (merged as any)[collectionKey] as Record<string, any>;
+        if (!targetCollection) continue;
+
+        for (const [id, newState] of Object.entries(changedEntities)) {
+          targetCollection[id] = newState;
+        }
+      }
+    }
+
+    // Remove deleted entities
+    if (delta.removed) {
+      for (const [collectionKey, ids] of Object.entries(delta.removed)) {
+        const targetCollection = (merged as any)[collectionKey] as Record<string, any>;
+        if (!targetCollection) continue;
+
+        for (const id of ids) {
+          delete targetCollection[id];
+        }
+      }
+    }
+
+    // Optionally merge updated config or metadata (if provided)
+    // if (delta.configChanged) {
+    //   merged.config = { ...merged.config, ...delta.configChanged };
+    // }
+
+    // Update tick/timestamp if included in the delta
+    merged.tick = tick;
+    merged.timestamp = timestamp;
+
+    return merged
+  }
+
 }
