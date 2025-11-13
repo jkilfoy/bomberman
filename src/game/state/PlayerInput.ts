@@ -11,4 +11,5 @@ export type PlayerInput =
       type: 'drop_bomb';
       playerId: string;
       clientTime: number;
-    };
+    }
+    | null;  // represents no input 
