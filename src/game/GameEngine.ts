@@ -39,6 +39,7 @@ import { createEntityId } from './utils/id';
 import { Hitbox } from './utils/collision';
 import { CollisionSystem } from './systems/CollisionSystem';
 import { GameDelta, EntityCollectionKey } from './net/types';
+import { Direction } from './utils/direction';
 
 const COLLECTION_KEYS: EntityCollectionKey[] = ['players', 'bombs', 'explosions', 'obstacles', 'powerUps', 'enemies'];
 const CONFIG_KEYS: (keyof GameConfig)[] = ['mode', 'gridWidth', 'gridHeight', 'cellSize', 'tickIntervalMs'];
@@ -348,16 +349,23 @@ export class GameEngine {
   private spawnPlayer(options: { id?: string; characterKey: string; name: string; spawn: GridCoordinate; speed?: number }) {
     const id = options.id ?? createEntityId('player');
     const worldPosition = this.grid.gridToWorld(options.spawn);
+
     const snapshot: PlayerSnapshot = {
       id,
       kind: 'player',
-      name: options.name,
-      characterKey: options.characterKey,
-      gridPosition: { ...options.spawn },
+      gridPosition: options.spawn,
       worldPosition,
       createdAt: this.timestamp,
-      speed: options.speed ?? 100,
+      name: options.name,
+      characterKey: options.characterKey,
       alive: true,
+      velocity: { x: 0, y: 0 },
+      facing: Direction.DOWN,
+      speed: options.speed ?? 180,
+      bombLimit: 1,
+      activeBombs: 0,
+      explosionRange: 1,
+      status: { shielded: false, invincible: false },
       hitbox: this.buildHitbox(0.7),
     };
 
