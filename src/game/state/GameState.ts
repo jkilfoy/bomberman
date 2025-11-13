@@ -75,7 +75,6 @@ export interface GameStateSnapshot {
   tick: number;
   timestamp: number;
   config: GameConfig;
-  lastAcknowledgedInputSeq: number;
   players: Record<string, PlayerSnapshot>;
   bombs: Record<string, BombSnapshot>;
   explosions: Record<string, ExplosionSnapshot>;

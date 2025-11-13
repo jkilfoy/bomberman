@@ -24,7 +24,7 @@ export class EntityManager<T extends BaseEntity<any>> {
     this.entities.forEach((entity) => entity.update(deltaMs));
   }
 
-  toRecord<TSnapshot extends { id: string }>() {
+  toRecord<TSnapshot extends { id: string }>(): Record<string, TSnapshot> {
     const record: Record<string, TSnapshot> = {};
     this.entities.forEach((entity) => {
       record[entity.id] = entity.getSnapshot() as TSnapshot;

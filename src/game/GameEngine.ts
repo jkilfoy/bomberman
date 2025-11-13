@@ -1,3 +1,20 @@
+/**
+ * GameEngine.ts
+ * ------------------------------------------------------
+ * The core deterministic simulation of the Bomberman world.
+ * This class is completely independent from rendering and networking.
+ * It is used by both the server (for authoritative simulation)
+ * and the client (for local prediction in ServerBackedGameInterface).
+ *
+ * Major Responsibilities:
+ *  - Process player inputs deterministically each tick.
+ *  - Update all game entities (players, bombs, enemies, etc.).
+ *  - Resolve collisions and handle gameplay rules.
+ *  - Produce and load full game state snapshots for synchronization.
+ *  - Generate snapshot deltas for efficient network sync.
+ * ------------------------------------------------------
+ */
+
 import { EntityManager } from '../core/EntityManager';
 import { DEFAULT_TICK_INTERVAL, GameConfig } from '../core/GameConfig';
 import { GridCoordinate, GridSystem, WorldCoordinate } from '../core/GridSystem';
@@ -11,7 +28,6 @@ import { BasicMap } from './map/BasicMap';
 import { CellType, GameMap } from './map/Map';
 import {
   BombSnapshot,
-  EnemySnapshot,
   ExplosionSnapshot,
   GameStateSnapshot,
   ObstacleSnapshot,
@@ -19,7 +35,6 @@ import {
   PowerUpSnapshot,
 } from './state/GameState';
 import { PlayerInput } from './state/PlayerInput';
-import { Direction } from './utils/direction';
 import { createEntityId } from './utils/id';
 import { Hitbox } from './utils/collision';
 import { CollisionSystem } from './systems/CollisionSystem';
@@ -50,15 +65,13 @@ const EXPLOSION_DIRECTIONS: GridCoordinate[] = [
 ];
 
 export class GameEngine {
-  private readonly options: GameEngineOptions;
-  private grid: GridSystem;
-  private map: GameMap;
   private readonly tickDuration: number;
   private tick = 0;
-  private timestamp = 0;
-  private currentSnapshot: GameStateSnapshot | null = null;
-  private previousSnapshot: GameStateSnapshot | null = null;
-  private readonly powerUpDropChance = 0.8;
+  private timestamp = 0;  // timestamp of the game in milliseconds
+
+  private grid: GridSystem;
+  private map: GameMap;
+  private collisionSystem: CollisionSystem;
 
   private players = new EntityManager<PlayerEntity>();
   private bombs = new EntityManager<BombEntity>();
@@ -68,22 +81,27 @@ export class GameEngine {
   private enemies = new EntityManager<EnemyEntity>();
 
   private inputQueue: PlayerInput[] = [];
-  private collisionSystem: CollisionSystem;
+  private currentSnapshot: GameStateSnapshot | null = null;
+  private previousSnapshot: GameStateSnapshot | null = null;
 
-  constructor(options: GameEngineOptions) {
-    this.options = options;
-    const tickInterval = options.config.tickIntervalMs ?? DEFAULT_TICK_INTERVAL;
-    this.tickDuration = tickInterval;
-    this.grid = new GridSystem(
-      options.config.gridWidth,
-      options.config.gridHeight,
-      options.config.cellSize,
-    );
-    this.map = options.map ?? new BasicMap(options.config.gridHeight, options.config.gridWidth);
+  constructor(private readonly options: {
+    config: GameConfig;
+    map?: GameMap;
+    initialPlayers?: Array<{
+      id?: string;
+      characterKey: string;
+      name: string;
+      spawn: GridCoordinate;
+      speed?: number;
+    }>;
+  }) {
+    const { config } = options;
+    this.tickDuration = config.tickIntervalMs ?? DEFAULT_TICK_INTERVAL;
 
-    this.seedObstaclesFromMap();
-    this.seedBoundaryWalls();
-    options.initialPlayers?.forEach((player) => this.spawnPlayer(player));
+    this.grid = new GridSystem(config.gridWidth, config.gridHeight, config.cellSize);
+    this.map = options.map ?? new BasicMap(config.gridHeight, config.gridWidth);
+
+    this.initializeEntities();
 
     this.collisionSystem = new CollisionSystem({
       players: this.players,
@@ -94,52 +112,22 @@ export class GameEngine {
       enemies: this.enemies,
       onBombTriggered: (bomb) => this.detonateBomb(bomb),
       onObstacleDestroyed: (obstacle) => this.handleObstacleDestruction(obstacle),
-      onPowerupCollected: (powerUp, player) => this.collectPowerup(powerUp, player)
+      onPowerupCollected: (powerUp, player) => this.collectPowerup(powerUp, player),
     });
   }
+
+  // =============================================================
+  // === PUBLIC INTERFACE =========================================
+  // =============================================================
 
   enqueueInput(input: PlayerInput) {
     this.inputQueue.push(input);
   }
 
-  removePlayer(playerId: string) {
-    if (!this.players.get(playerId)) return;
-    this.players.remove(playerId);
-    this.currentSnapshot = null;
-  }
-
-  spawnPlayer(options: PlayerSpawnOptions) {
-    const id = options.id ?? createEntityId('player');
-    const gridPosition = { ...options.spawn };
-    const worldPosition = this.grid.gridToWorld(gridPosition);
-
-    const snapshot: PlayerSnapshot = {
-      id,
-      kind: 'player',
-      gridPosition,
-      worldPosition,
-      createdAt: this.timestamp,
-      name: options.name,
-      characterKey: options.characterKey,
-      alive: true,
-      velocity: { x: 0, y: 0 },
-      facing: Direction.DOWN,
-      speed: options.speed ?? 180,
-      bombLimit: 1,
-      activeBombs: 0,
-      explosionRange: 1,
-      status: { shielded: false, invincible: false },
-      hitbox: this.buildHitbox(0.7),
-    };
-
-    this.players.add(new PlayerEntity({ state: snapshot, grid: this.grid }));
-    return id;
-  }
-
   advance(deltaMs?: number) {
     const delta = deltaMs ?? this.tickDuration;
     this.timestamp += delta;
-    this.tick += 1;
+    this.tick++;
 
     this.processInputs();
 
@@ -157,91 +145,92 @@ export class GameEngine {
     this.currentSnapshot = this.buildSnapshot();
   }
 
-  /** Get current snapshot, lazy building if absent */
   getSnapshot(): GameStateSnapshot {
-    if (!this.currentSnapshot) {
-      this.currentSnapshot = this.buildSnapshot();
-    }
-    return this.currentSnapshot;
+    return (this.currentSnapshot ??= this.buildSnapshot());
+  }
+
+  loadSnapshot(snapshot: GameStateSnapshot) {
+    this.tick = snapshot.tick;
+    this.timestamp = snapshot.timestamp;
+
+    this.players.clear();
+    this.bombs.clear();
+    this.explosions.clear();
+    this.obstacles.clear();
+    this.powerUps.clear();
+    this.enemies.clear();
+
+    Object.values(snapshot.players).forEach((s) => this.players.add(new PlayerEntity({ state: s, grid: this.grid })));
+    Object.values(snapshot.bombs).forEach((s) => this.bombs.add(new BombEntity({ state: s })));
+    Object.values(snapshot.explosions).forEach((s) => this.explosions.add(new ExplosionEntity({ state: s })));
+    Object.values(snapshot.obstacles).forEach((s) => this.obstacles.add(new ObstacleEntity({ state: s })));
+    Object.values(snapshot.powerUps).forEach((s) => this.powerUps.add(new PowerUpEntity({ state: s })));
+    Object.values(snapshot.enemies).forEach((s) => this.enemies.add(new EnemyEntity({ state: s, grid: this.grid })));
+
+    this.currentSnapshot = snapshot;
+    this.previousSnapshot = null;
   }
 
   getSnapshotDelta(previous: GameStateSnapshot | null = this.previousSnapshot): GameDelta | null {
-    if (!previous) {
-      return null;
-    }
+    if (!previous) return null;
 
     const current = this.getSnapshot();
-    const delta: GameDelta = {
-      changed: {},
-      removed: {},
-    };
+    const delta: GameDelta = { changed: {}, removed: {} };
     let hasChanges = false;
 
-    /** Compare every config field; any differences go into configChanges */
-    const configChanges: Partial<Record<keyof GameConfig, GameConfig[keyof GameConfig]>> = {};
-    for (const key of CONFIG_KEYS as (keyof GameConfig)[]) {
-      const currentValue = current.config[key];
-      const previousValue = previous.config[key];
-      if (currentValue !== previousValue) {
-        configChanges[key] = currentValue as GameConfig[typeof key];
-        hasChanges = true;
-      }
-    }
-    
-    if (Object.keys(configChanges).length) {
-      delta.configChanged = configChanges;
-    }
+    const collections: EntityCollectionKey[] = ['players', 'bombs', 'explosions', 'obstacles', 'powerUps', 'enemies'];
+    for (const key of collections) {
+      const curr = current[key] as Record<string, any>;
+      const prev = previous[key] as Record<string, any>;
 
-    COLLECTION_KEYS.forEach((key) => {
-      const currentCollection = current[key] as Record<string, any>;
-      const previousCollection = previous[key] as Record<string, any>;
-
-      Object.keys(currentCollection).forEach((id) => {
-        if (previousCollection[id] !== currentCollection[id]) {
-          (delta.changed[key] ??= {})[id] = currentCollection[id];
+      for (const id of Object.keys(curr)) {
+        if (curr[id] !== prev[id]) {
+          (delta.changed[key] ??= {})[id] = curr[id];
           hasChanges = true;
         }
-      });
+      }
 
-      Object.keys(previousCollection).forEach((id) => {
-        if (!currentCollection[id]) {
+      for (const id of Object.keys(prev)) {
+        if (!curr[id]) {
           (delta.removed[key] ??= []).push(id);
           hasChanges = true;
         }
-      });
-    });
-
-    if (!hasChanges) {
-      return null;
+      }
     }
 
-    return delta;
+    return hasChanges ? delta : null;
   }
+
+  // =============================================================
+  // === INPUT HANDLING ===========================================
+  // =============================================================
 
   private processInputs() {
     if (this.inputQueue.length === 0) return;
-
     const queue = [...this.inputQueue];
     this.inputQueue = [];
 
-    queue.forEach((input) => {
+    for (const input of queue) {
+      if (input === null) continue; // ignore no-ops
+
       const player = this.players.get(input.playerId);
-      if (!player) return;
+      if (!player) continue;
+
       switch (input.type) {
         case 'set_direction':
           player.setMovementIntent(input.direction);
-          return;
+          break;
         case 'drop_bomb':
           this.tryDropBomb(player);
-          return;
+          break;
       }
-    });
+    }
   }
 
   private tryDropBomb(player: PlayerEntity) {
     if (!player.canDropBomb()) return;
     const playerState = player.getSnapshot();
-    if (this.isBombOnCell(playerState.gridPosition)) return;
+    if (this.bombs.values().some((b) => this.sameCell(b.getSnapshot().gridPosition, playerState.gridPosition))) return;
 
     const id = createEntityId('bomb');
     const worldPosition = this.grid.gridToWorld(playerState.gridPosition);
@@ -252,7 +241,7 @@ export class GameEngine {
       gridPosition: { ...playerState.gridPosition },
       worldPosition,
       createdAt: this.timestamp,
-      fuse: 2000,
+      fuse: 2000,     //  todo magic constants
       duration: 2000,
       explosionRange: playerState.explosionRange,
       detonated: false,
@@ -263,45 +252,116 @@ export class GameEngine {
     player.onBombPlaced(entity.id);
   }
 
+  // =============================================================
+  // === GAMEPLAY LOGIC ===========================================
+  // =============================================================
+
   private handleBombs() {
-    this.bombs.values().forEach((bomb) => {
+    for (const bomb of this.bombs.values()) {
       if (bomb.shouldDetonate()) {
         this.detonateBomb(bomb);
       }
-    });
+    }
+  }
+
+  private detonateBomb(bomb: BombEntity) {
+    if (bomb.getSnapshot().detonated) return;
+    bomb.markDetonated();
+
+    const owner = this.players.get(bomb.getSnapshot().ownerId);
+    owner?.onBombDetonated(bomb.id);
+
+    this.spawnExplosions(bomb);
+    this.bombs.remove(bomb.id);
   }
 
   private spawnExplosions(bomb: BombEntity) {
     const snapshot = bomb.getSnapshot();
+    const directions: GridCoordinate[] = [
+      { col: 0, row: -1 },
+      { col: 0, row: 1 },
+      { col: -1, row: 0 },
+      { col: 1, row: 0 },
+    ];
+
     this.spawnExplosionAt(snapshot.gridPosition, snapshot.ownerId);
 
-    EXPLOSION_DIRECTIONS.forEach((offset) => {
+    for (const offset of directions) {
       for (let step = 1; step <= snapshot.explosionRange; step++) {
-        const target: GridCoordinate = {
+        const target = {
           col: snapshot.gridPosition.col + offset.col * step,
           row: snapshot.gridPosition.row + offset.row * step,
         };
 
         if (!this.grid.isValidCell(target)) break;
-        const obstacle = this.getObstacleAtCell(target);
 
+        const obstacle = this.obstacles.values().find((o) => this.sameCell(o.getSnapshot().gridPosition, target));
         if (obstacle) {
-          if (obstacle.getSnapshot().destructible) {
-            this.spawnExplosionAt(target, snapshot.ownerId);
-          }
+          if (obstacle.getSnapshot().destructible) this.spawnExplosionAt(target, snapshot.ownerId);
           break;
         }
 
         this.spawnExplosionAt(target, snapshot.ownerId);
       }
-    });
+    }
+  }
+
+  private spawnExplosionAt(gridPosition: GridCoordinate, ownerId: string) {
+    const id = createEntityId('explosion');
+    const worldPosition = this.grid.gridToWorld(gridPosition);
+    const snapshot: ExplosionSnapshot = {
+      id,
+      kind: 'explosion',
+      gridPosition: { ...gridPosition },
+      worldPosition,
+      createdAt: this.timestamp,
+      expiresAt: 400,
+      ownerId,
+      hitbox: this.buildHitbox(0.9),
+      lethal: true,
+    };
+
+    this.explosions.add(new ExplosionEntity({ state: snapshot }));
   }
 
   private cleanupExplosions() {
-    this.explosions
-      .values()
-      .filter((explosion) => explosion.isExpired())
-      .forEach((explosion) => this.explosions.remove(explosion.id));
+    for (const explosion of this.explosions.values()) {
+      if (explosion.isExpired()) this.explosions.remove(explosion.id);
+    }
+  }
+
+  removePlayer(playerId: string) {
+    if (!this.players.get(playerId)) return;
+    this.players.remove(playerId);
+  }
+
+  // =============================================================
+  // === WORLD SETUP =============================================
+  // =============================================================
+
+  private initializeEntities() {
+    this.seedObstaclesFromMap();
+    this.seedBoundaryWalls();
+    this.options.initialPlayers?.forEach((player) => this.spawnPlayer(player));
+  }
+
+  private spawnPlayer(options: { id?: string; characterKey: string; name: string; spawn: GridCoordinate; speed?: number }) {
+    const id = options.id ?? createEntityId('player');
+    const worldPosition = this.grid.gridToWorld(options.spawn);
+    const snapshot: PlayerSnapshot = {
+      id,
+      kind: 'player',
+      name: options.name,
+      characterKey: options.characterKey,
+      gridPosition: { ...options.spawn },
+      worldPosition,
+      createdAt: this.timestamp,
+      speed: options.speed ?? 100,
+      alive: true,
+      hitbox: this.buildHitbox(0.7),
+    };
+
+    this.players.add(new PlayerEntity({ state: snapshot, grid: this.grid }));
   }
 
   private seedObstaclesFromMap() {
@@ -338,22 +398,10 @@ export class GameEngine {
     const halfHeight = height / 2;
     const offset = thickness / 2;
 
-    this.createBoundaryObstacle(
-      { x: halfWidth, y: -offset },
-      horizontalHitbox,
-    );
-    this.createBoundaryObstacle(
-      { x: halfWidth, y: height + offset },
-      horizontalHitbox,
-    );
-    this.createBoundaryObstacle(
-      { x: -offset, y: halfHeight },
-      verticalHitbox,
-    );
-    this.createBoundaryObstacle(
-      { x: width + offset, y: halfHeight },
-      verticalHitbox,
-    );
+    this.createBoundaryObstacle({ x: halfWidth, y: -offset }, horizontalHitbox);
+    this.createBoundaryObstacle({ x: halfWidth, y: height + offset }, horizontalHitbox);
+    this.createBoundaryObstacle({ x: -offset, y: halfHeight }, verticalHitbox);
+    this.createBoundaryObstacle({ x: width + offset, y: halfHeight }, verticalHitbox);
   }
 
   private createBoundaryObstacle(worldPosition: WorldCoordinate, hitbox: Hitbox) {
@@ -371,59 +419,9 @@ export class GameEngine {
     this.obstacles.add(new ObstacleEntity({ state: obstacle }));
   }
 
-  private isBombOnCell(position: GridCoordinate) {
-    return this.bombs
-      .values()
-      .some((bomb) => this.sameCell(bomb.getSnapshot().gridPosition, position));
-  }
-
-  private sameCell(a: GridCoordinate, b: GridCoordinate) {
-    return a.col === b.col && a.row === b.row;
-  }
-
-  private buildHitbox(scale: number, override?: Hitbox): Hitbox {
-    if (override) {
-      return override;
-    }
-    const dimension = this.grid.cellSize * scale;
-    return {
-      width: dimension,
-      height: dimension,
-    };
-  }
-
-  private detonateBomb(bomb: BombEntity) {
-    if (bomb.getSnapshot().detonated) return;
-    bomb.markDetonated();
-    const owner = this.players.get(bomb.getSnapshot().ownerId);
-    owner?.onBombDetonated(bomb.id);
-    this.spawnExplosions(bomb);
-    this.bombs.remove(bomb.id);
-  }
-
-  private spawnExplosionAt(gridPosition: GridCoordinate, ownerId: string) {
-    const id = createEntityId('explosion');
-    const worldPosition = this.grid.gridToWorld(gridPosition);
-    const explosion: ExplosionSnapshot = {
-      id,
-      kind: 'explosion',
-      gridPosition: { ...gridPosition },
-      worldPosition,
-      createdAt: this.timestamp,
-      expiresAt: 400,
-      ownerId,
-      hitbox: this.buildHitbox(0.9),
-      lethal: true,
-    };
-
-    this.explosions.add(new ExplosionEntity({ state: explosion }));
-  }
-
-  private getObstacleAtCell(position: GridCoordinate) {
-    return this.obstacles
-      .values()
-      .find((obstacle) => this.sameCell(obstacle.getSnapshot().gridPosition, position));
-  }
+  // =============================================================
+  // === POWERUPS & UTILITIES ====================================
+  // =============================================================
 
   private handleObstacleDestruction(obstacle: ObstacleEntity) {
     const snapshot = obstacle.getSnapshot();
@@ -431,10 +429,7 @@ export class GameEngine {
   }
 
   private maybeSpawnPowerUp(gridPosition: GridCoordinate) {
-    if (Math.random() > this.powerUpDropChance) {
-      return;
-    }
-
+    if (Math.random() > 0.8) return;
     const id = createEntityId('powerup');
     const worldPosition = this.grid.gridToWorld(gridPosition);
     const snapshot: PowerUpSnapshot = {
@@ -453,17 +448,16 @@ export class GameEngine {
 
   private getRandomPowerUpType(): PowerUpSnapshot['powerUpType'] {
     const types: PowerUpSnapshot['powerUpType'][] = ['speed', 'bomb', 'range', 'shield'];
-    const index = Math.floor(Math.random() * types.length);
-    return types[index];
+    return types[Math.floor(Math.random() * types.length)];
   }
 
   private collectPowerup(powerUp: PowerUpEntity, player: PlayerEntity) {
-    const powerUpState = powerUp.getSnapshot();
-    if (!powerUpState.available) return;
+    const state = powerUp.getSnapshot();
+    if (!state.available) return;
 
     powerUp.consume();
 
-    switch (powerUpState.powerUpType) {
+    switch (state.powerUpType) {
       case 'speed':
         player.applySpeedBoost(5);
         break;
@@ -477,94 +471,52 @@ export class GameEngine {
         player.grantShield();
         break;
     }
-  } 
+  }
 
+  private sameCell(a: GridCoordinate, b: GridCoordinate) {
+    return a.row === b.row && a.col === b.col;
+  }
+
+  private buildHitbox(scale: number): Hitbox {
+    const size = this.grid.cellSize * scale;
+    return { width: size, height: size };
+  }
+
+  /**
+   * Build a full GameStateSnapshot from all current entities.
+   * This snapshot represents the complete authoritative state of the world.
+   * It is used both for rendering (locally) and network sync (server).
+   */
   private buildSnapshot(): GameStateSnapshot {
-    const config: GameConfig = {
-      ...this.options.config,
-      tickIntervalMs: this.options.config.tickIntervalMs ?? this.tickDuration,
-    };
-
     return {
       tick: this.tick,
       timestamp: this.timestamp,
-      config,
-      players: this.players.toRecord<PlayerSnapshot>(),
-      bombs: this.bombs.toRecord<BombSnapshot>(),
-      explosions: this.explosions.toRecord<ExplosionSnapshot>(),
-      obstacles: this.obstacles.toRecord<ObstacleSnapshot>(),
-      powerUps: this.powerUps.toRecord<PowerUpSnapshot>(),
-      enemies: this.enemies.toRecord<EnemySnapshot>(),
+      config: this.options.config,
+
+      // Entity snapshots: each manager converts its internal entities into plain state objects
+      players: this.players.toRecord(),
+      bombs: this.bombs.toRecord(),
+      explosions: this.explosions.toRecord(),
+      obstacles: this.obstacles.toRecord(),
+      powerUps: this.powerUps.toRecord(),
+      enemies: this.enemies.toRecord(),
     };
   }
 
-  loadSnapshot(snapshot: GameStateSnapshot) {
-    this.tick = snapshot.tick;
-    this.timestamp = snapshot.timestamp;
+  // =============================================================
+  // === CLEANUP & UTILITIES =====================================
+  // =============================================================
+
+  /** Destroy the engine and all managed entities. */
+  destroy() {
     this.players.clear();
     this.bombs.clear();
     this.explosions.clear();
     this.obstacles.clear();
     this.powerUps.clear();
     this.enemies.clear();
-
-    Object.values(snapshot.players).forEach((player) => {
-      this.players.add(new PlayerEntity({ state: player, grid: this.grid }));
-    });
-    Object.values(snapshot.bombs).forEach((bomb) => {
-      this.bombs.add(new BombEntity({ state: bomb }));
-    });
-    Object.values(snapshot.explosions).forEach((explosion) => {
-      this.explosions.add(new ExplosionEntity({ state: explosion }));
-    });
-    Object.values(snapshot.obstacles).forEach((obstacle) => {
-      this.obstacles.add(new ObstacleEntity({ state: obstacle }));
-    });
-    Object.values(snapshot.powerUps).forEach((powerUp) => {
-      this.powerUps.add(new PowerUpEntity({ state: powerUp }));
-    });
-    Object.values(snapshot.enemies).forEach((enemy) => {
-      this.enemies.add(new EnemyEntity({ state: enemy, grid: this.grid }));
-    });
-
-    this.currentSnapshot = snapshot;
+    this.inputQueue = [];
+    this.currentSnapshot = null;
     this.previousSnapshot = null;
   }
-
-  static applySnapshotDelta(base: GameStateSnapshot, delta: GameDelta): GameStateSnapshot {
-    const mergedConfig: GameConfig = delta.configChanged
-      ? ({ ...base.config, ...delta.configChanged } as GameConfig)
-      : base.config;
-
-    const next: GameStateSnapshot = {
-      ...base,
-      config: mergedConfig,
-      players: { ...base.players },
-      bombs: { ...base.bombs },
-      explosions: { ...base.explosions },
-      obstacles: { ...base.obstacles },
-      powerUps: { ...base.powerUps },
-      enemies: { ...base.enemies },
-    };
-
-    COLLECTION_KEYS.forEach((key) => {
-      const changed = delta.changed[key];
-      if (changed) {
-        Object.entries(changed).forEach(([id, entity]) => {
-          if (!entity) return;
-          (next[key] as Record<string, any>)[id] = entity;
-        });
-      }
-
-      const removed = delta.removed[key];
-      if (removed) {
-        removed.forEach((id) => {
-          delete (next[key] as Record<string, any>)[id];
-        });
-      }
-    });
-
-    return next;
-  }
-
 }
