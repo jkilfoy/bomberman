@@ -294,13 +294,6 @@ export class Match {
     this.evaluateEndConditions(snapshot);
   }
 
-  forwardInput(message: PlayerInputMessage & { matchId?: string }) {
-    const player = this.players.find((entry) => entry.playerId === message.playerId);
-    if (!player) return;
-    this.engine.enqueueInput(message.input);
-  }
-
-
   // Ends the match, cleans up resources, and notifies clients. 
   endMatch(reason: string) {
     if (this.finished) return;

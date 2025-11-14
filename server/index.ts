@@ -1,11 +1,10 @@
 import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
-import { LobbyManager, LobbyEntry } from './lobby/LobbyManager';
+import { LobbyEntry, LobbyManager } from './lobby/LobbyManager';
 import { Match } from './match/Match';
 import { getSpawnForIndex } from './match/spawnPositions';
 import type { MatchPlayerInfo } from './match/types';
-import type { PlayerInputMessage } from '../src/game/net/types';
 
 const PORT = Number(process.env.PORT) || 9653;
 
@@ -79,13 +78,6 @@ io.on('connection', (socket) => {
       return;
     }
     match.registerSocket(playerId, socket);
-  });
-
-  socket.on('player:input', (message: PlayerInputMessage & { matchId?: string }) => {
-    if (!message.matchId) return;
-    const match = activeMatches.get(message.matchId);
-    if (!match) return;
-    match.forwardInput(message);
   });
 
   socket.on('disconnect', () => {
