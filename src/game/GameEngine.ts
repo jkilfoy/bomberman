@@ -223,10 +223,10 @@ export class GameEngine {
       if (!player) continue;
 
       // movement state
-          player.setMovementIntent(input.direction);
+      player.setMovementIntent(input.direction);
 
       if (input.bomb) {
-          this.tryDropBomb(player);
+        this.tryDropBomb(player);
       }
     }
   }
@@ -467,6 +467,8 @@ export class GameEngine {
     if (!state.available) return;
 
     powerUp.consume();
+    // remove powerup
+    this.powerUps.remove(powerUp.id);
 
     switch (state.powerUpType) {
       case 'speed':
