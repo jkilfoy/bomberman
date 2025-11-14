@@ -1,15 +1,14 @@
 import { Direction } from '../utils/direction';
 
-export type PlayerInput =
-  | {
-      type: 'set_direction';
-      playerId: string;
-      direction: Direction;
-      clientTime: number;
-    }
-  | {
-      type: 'drop_bomb';
-      playerId: string;
-      clientTime: number;
-    }
-    | null;  // represents no input 
+export interface PlayerInput {
+  playerId: string;
+
+  // movement state — continuous booleans
+  direction: Direction
+
+  // discrete actions — fire on this input only when true
+  bomb: boolean;
+
+  // client timestamp (for latency measurement, optional)
+  // clientTime: number;
+}

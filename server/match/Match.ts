@@ -7,6 +7,7 @@ import type { LobbyEntry } from '../lobby/LobbyManager';
 import type { MatchPlayerInfo } from './types';
 
 import { MinPriorityQueue } from '@datastructures-js/priority-queue';
+import { Direction } from '../../src/game/utils/direction';
 
 
 interface PlayerInputBuffer {
@@ -205,11 +206,16 @@ export class Match {
 
   makeNoOpInput(playerId: string, seq: number, now: number): ReceivedPlayerInputMessage {
     return {
-      playerId: playerId,
-      input: null,
+      playerId,
       sequence: seq,
-      sentAt: now,
+      sentAt: 0,
       receivedAt: now,
+      input: {
+        playerId,
+        direction: Direction.NONE,
+        bomb: false,
+      },
+      
     };
   }
 

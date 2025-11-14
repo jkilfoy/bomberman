@@ -97,7 +97,7 @@ export class ServerBackedGameInterface implements GameInterface {
   constructor(private readonly options: ServerBackedOptions, initialSnapshot?: GameStateSnapshot) {
     this.engine = new GameEngine(options.engineOptions);
     this.smoothing = { ...DEFAULT_SMOOTHING, ...options.smoothing } as SmoothingConfig;
-    this.holdBackMs = options.holdBackMs ?? 100;
+    this.holdBackMs = options.holdBackMs ?? 0;  // revisit smoothing
 
     if (initialSnapshot) {
       this.serverSnapshot = initialSnapshot;
@@ -190,7 +190,7 @@ export class ServerBackedGameInterface implements GameInterface {
     if (this.pendingSnapshotQueue.length === 0) return;
     const cutoff = performance.now() - this.holdBackMs;
 
-    // Find the last snapshot that is older than cutoff
+    // Find the latest snapshot that is older than cutoff
     let index = -1;
     for (let i = 0; i < this.pendingSnapshotQueue.length; i++) {
       if (this.pendingSnapshotQueue[i].receivedAt <= cutoff) index = i;
@@ -233,6 +233,7 @@ export class ServerBackedGameInterface implements GameInterface {
     this.serverSnapshot = snapshot;
     this.lastAcknowledgedInputSeq = lastAcknowledgedInputSeq;
     this.engine.loadSnapshot(snapshot);
+    this.engine.clearInputQueue();
 
     // Re-simulate any inputs that client sent AFTER the server tick
     this.replayPredictionsSince(this.lastAcknowledgedInputSeq);

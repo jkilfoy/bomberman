@@ -33,6 +33,7 @@ export default class GameScene extends Phaser.Scene {
   private debugText?: Phaser.GameObjects.Text;
   private lastPing = 0;
   private lastUpdateTick = 0;
+  private lastSentInput: PlayerInput | null = null;
   private selectedCharacter!: Character;
   private matchId: string | undefined;
   private networkSocket: Socket | undefined;
@@ -121,7 +122,8 @@ export default class GameScene extends Phaser.Scene {
 
     if (this.useServer) {
       const serverOptions: ConstructorParameters<typeof ServerBackedGameInterface>[0] = {
-        socketUrl: 'http://localhost:9653',
+        // socketUrl: 'http://localhost:9653',
+        socketUrl: 'http://:9653',
         playerId: this.localPlayerId,
         engineOptions,
         onMatchEnd: (payload: { matchId: string; reason: string }) => this.handleMatchEnd(payload),
@@ -150,23 +152,29 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private sendInputs(time: number) {
-    const direction = this.controller.direction.get();
-    const movementInput: PlayerInput = {
-      type: 'set_direction',
-      playerId: this.localPlayerId,
-      direction,
-      clientTime: time,
-    };
 
-    this.interface.enqueueInput(movementInput);
+    const input = this.controller.getInput();
 
-    if (this.controller.bomb.justPressed()) {
-      this.interface.applyInput({
-        type: 'drop_bomb',
-        playerId: this.localPlayerId,
-        clientTime: time,
-      });
+    // only send input if it has changed
+    if (this.lastSentInput && this.inputsEqual(input, this.lastSentInput)) {
+      return;
     }
+
+    console.log("Last Input: ", this.lastSentInput);
+    console.log("Next input: ", input);
+
+    input.playerId = this.localPlayerId;
+    this.interface.enqueueInput(input);
+    this.lastSentInput = input;
+  }
+
+  private inputsEqual(a: PlayerInput | null, b: PlayerInput | null): boolean {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    return (
+      a.direction === b.direction &&
+      a.bomb === b.bomb
+    );
   }
 
   private syncState() {
@@ -311,7 +319,9 @@ export default class GameScene extends Phaser.Scene {
 
   private pruneSprites(collection: RenderCollection<Phaser.GameObjects.GameObject>, stateRecord: Record<string, unknown>) {
     Array.from(collection.entries()).forEach(([id, sprite]) => {
+
       if (!stateRecord[id]) {
+        // console.log(`Pruning sprite with id: ${id}`); // todo remove
         sprite.destroy();
         collection.delete(id);
       }

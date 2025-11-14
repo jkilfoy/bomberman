@@ -66,6 +66,7 @@ const EXPLOSION_DIRECTIONS: GridCoordinate[] = [
 ];
 
 export class GameEngine {
+  
   private readonly tickDuration: number;
   private tick = 0;
   private timestamp = 0;  // timestamp of the game in milliseconds
@@ -202,6 +203,10 @@ export class GameEngine {
     return hasChanges ? delta : null;
   }
 
+  clearInputQueue() {
+    this.inputQueue = [];
+  }
+
   // =============================================================
   // === INPUT HANDLING ===========================================
   // =============================================================
@@ -217,13 +222,11 @@ export class GameEngine {
       const player = this.players.get(input.playerId);
       if (!player) continue;
 
-      switch (input.type) {
-        case 'set_direction':
+      // movement state
           player.setMovementIntent(input.direction);
-          break;
-        case 'drop_bomb':
+
+      if (input.bomb) {
           this.tryDropBomb(player);
-          break;
       }
     }
   }

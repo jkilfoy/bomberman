@@ -2,11 +2,12 @@ import Phaser from 'phaser'
 import { Controller } from './Controller'
 import { Direction } from '../game/utils/direction'
 
-export default class KeyboardController implements Controller {
-  private scene: Phaser.Scene
+export default class KeyboardController extends Controller {
+  private scene: Phaser.Scene // todo belongs in super?
   private keys: Record<string, Phaser.Input.Keyboard.Key>
 
   constructor(scene: Phaser.Scene) {
+    super()
     this.scene = scene
 
     // Register relevant keys
