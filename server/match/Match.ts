@@ -107,10 +107,24 @@ export class Match {
     const disconnectHandler = () => this.onPlayerDisconnect(playerId);
     this.socketHandlers.set(socket.id, { input: inputHandler, disconnect: disconnectHandler });
     socket.on('player:input', inputHandler);
+    socket.on('player:requestAuthoritativeSnapshot', () => this.sendFullSnapshot(playerId));
     socket.once('disconnect', disconnectHandler);
 
     this.sendInitialSnapshot(playerId, socket);
   }
+
+  /** Sends a full authoritative snapshot to a player */
+  sendFullSnapshot(playerId: string) {
+    const fullSnapshot = this.engine.getSnapshot();
+    const update: GameUpdateMessage = {
+        tick: fullSnapshot.tick,
+        timestamp: fullSnapshot.timestamp,
+        fullSnapshot: true,
+        snapshot: fullSnapshot,
+        playerInputSequence: this.getCurrentPlayerInputSequences()
+      };
+    this.io.to(this.roomName).emit('game:update', update);
+  } 
 
 
   /** Handles incoming player input messages */
@@ -248,7 +262,8 @@ export class Match {
       this.engine.advance();
 
       // Get the snapshot delta and send to clients
-      const delta = this.engine.getSnapshotDelta();
+      // const delta = this.engine.getSnapshotDelta();
+      const delta = this.engine.getSnapshot()
 
       if (delta == null) return;
       if (!this.initialSnapshotSent) return;  // todo : why is this guard here?
@@ -257,7 +272,9 @@ export class Match {
       const update: GameUpdateMessage = {
         tick: snapshot.tick,
         timestamp: snapshot.timestamp,
-        delta,
+        // delta,
+        fullSnapshot: true,
+        snapshot: delta,
         playerInputSequence: this.getCurrentPlayerInputSequences()
       };
 
