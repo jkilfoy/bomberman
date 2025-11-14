@@ -46,7 +46,7 @@ interface ServerBackedOptions {
 // ---- Helpers -------------------------------------------------------------
 
 const DEFAULT_SMOOTHING: SmoothingConfig = {
-  threshold: 12, // pixels
+  threshold: 18, // pixels
   factor: 0.2,
 };
 
@@ -73,6 +73,7 @@ export class ServerBackedGameInterface implements GameInterface {
   
   // the last authoritative snapshot received from server
   private serverSnapshot: GameStateSnapshot | null = null;
+  
 
   // Prediction
   private playerInputBuffer: PlayerInputEntry[] = []; // inputs sent but not yet acknowledged by server
@@ -87,12 +88,14 @@ export class ServerBackedGameInterface implements GameInterface {
   private readonly holdBackMs: number;
 
   // Queue of incoming snapshots to be applied after hold-back
-  // All snapshots in queue are full snapshots (deltas have been applied already)
+  // All snapshots in queue are full snapshots (deltas are applied to the last )
   private readonly pendingSnapshotQueue: { 
     pendingSnapshot: GameStateSnapshot; 
     receivedAt: number;
     lastAcknowledgedInputSeq: number;
   }[] = [];
+
+  private latestUpdateInQueue: number = 0;  // tick of latest update in pendingSnapshotQueue
 
   constructor(private readonly options: ServerBackedOptions, initialSnapshot?: GameStateSnapshot) {
     this.engine = new GameEngine(options.engineOptions);
@@ -154,6 +157,28 @@ export class ServerBackedGameInterface implements GameInterface {
 
   private onGameUpdate(message: GameUpdateMessage) {
     const currInputSeq = message.playerInputSequence[this.options.playerId] || this.lastAcknowledgedInputSeq;
+
+
+    // todo determine if needed
+    // const tick = message.tick;
+
+    // if (tick % 60 === 0) {
+    //   console.log(`[GameUpdate] Received update for tick ${tick}`, message);
+    // }
+
+    // // Ignore out-of-order updates
+    // if (message.tick < this.latestUpdateInQueue) {
+    //   return
+    // }
+
+    // // Request authoritative snapshot if we are missing a frame
+    // if (message.tick > this.latestUpdateInQueue + 1) {
+    //   console.warn(`[ServerBackedGameInterface.onGameUpdate] Missing update frames. Expected tick > ${this.latestUpdateInQueue}, got ${message.tick}. Requesting full snapshot.`);
+    //   this.requestFullSnapshot();
+    // }
+
+    // this.latestUpdateInQueue = message.tick;
+
     
     // If the update contains a complete snapshot, enqueue the full snapshot
     if (message.fullSnapshot && message.snapshot) {
@@ -341,6 +366,16 @@ export class ServerBackedGameInterface implements GameInterface {
     }
 
     this.setLocalSnapshot(predictedState);
+  }
+
+  requestFullSnapshot() {
+    if (this.socket && this.socket.connected) {
+      console.log("[ServerBackedGameInterface] Requesting full authoritative snapshot from server...");
+      this.socket.emit('player:requestAuthoritativeSnapshot', {
+        matchId: this.options.matchId,
+        playerId: this.options.playerId,
+      });
+    }
   }
 
   getCurrentState(): GameStateSnapshot {
