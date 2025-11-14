@@ -35,4 +35,15 @@ export class EntityManager<T extends BaseEntity<any>> {
   clear() {
     this.entities.clear();
   }
+
+  // For logging purposes
+  log(tick?: number) {
+    if (this.entities.size === 0) {return;}
+    const type = this.entities.values().next().value?.getSnapshot().kind || 'unknown'; 
+    console.groupCollapsed((tick !== undefined ? `Tick ${tick}: ` : '') + type + 's');
+    this.entities.forEach((entity) => {
+      console.log(entity.getSnapshot());
+    });
+    console.groupEnd();
+  }
 }
