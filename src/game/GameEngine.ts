@@ -468,11 +468,11 @@ export class GameEngine {
 
     powerUp.consume();
     // remove powerup
-    this.powerUps.remove(powerUp.id);
+    // this.powerUps.remove(powerUp.id);
 
     switch (state.powerUpType) {
       case 'speed':
-        player.applySpeedBoost(5);
+        player.applySpeedBoost(50);
         break;
       case 'bomb':
         player.applyBombLimitIncrease(1);

@@ -160,9 +160,6 @@ export default class GameScene extends Phaser.Scene {
       return;
     }
 
-    console.log("Last Input: ", this.lastSentInput);
-    console.log("Next input: ", input);
-
     input.playerId = this.localPlayerId;
     this.interface.enqueueInput(input);
     this.lastSentInput = input;

@@ -20,7 +20,7 @@ interface ReceivedPlayerInputMessage extends PlayerInputMessage {
 }
 
 const MATCH_TICK_INTERVAL = 1000 / 60;
-const MATCH_DURATION_MS = 2 * 60 * 1000;
+const MATCH_DURATION_MS = 4 * 60 * 1000;
 const INPUT_TIMEOUT_MS = 100; // Time to wait before skipping missing inputs
 
 /**
